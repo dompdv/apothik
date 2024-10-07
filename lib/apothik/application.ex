@@ -7,14 +7,22 @@ defmodule Apothik.Application do
 
   @impl true
   def start(_type, _args) do
-    children = [
-      # Starts a worker by calling: Apothik2.Worker.start_link(arg)
-      # {Apothik2.Worker, arg}
-    ]
-
     # See https://hexdocs.pm/elixir/Supervisor.html
     # for other strategies and supported options
-    opts = [strategy: :one_for_one, name: Apothik2.Supervisor]
-    Supervisor.start_link(children, opts)
+    hosts = for i <- 1..5, do: :"apothik_#{i}@127.0.0.1"
+
+    topologies = [
+      apothik_cluster_1: [
+        strategy: Cluster.Strategy.Epmd,
+        config: [hosts: hosts]
+      ]
+    ]
+
+    children = [
+      {Cluster.Supervisor, [topologies, [name: Apothik.ClusterSupervisor]]}
+      # ..other children..
+    ]
+
+    Supervisor.start_link(children, strategy: :one_for_one, name: Apothik.Supervisor)
   end
 end
