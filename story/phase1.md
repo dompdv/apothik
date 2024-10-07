@@ -33,5 +33,16 @@ Step 4: But they don't know each other?? Answer `libcluster`
 
 `https://github.com/bitwalker/libcluster`
 
+We add an application with a Supervisor to be able to launch a libcluster process.
+Several techniques can be used.
+epmd = Le service de base qui permet que chaque neoud connait tous les autres noeuds qui se connaissent.
+On liste "en dur" tous les noeuds fixes du cluster
+
+Test:
+1. Start master
+2. Node.list -> []
+3. Node.connect(:"apothik_1@127.0.0.1")
+2. Node.list -> toute la liste
+
 
 
