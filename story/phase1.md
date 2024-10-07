@@ -44,5 +44,19 @@ Test:
 3. Node.connect(:"apothik_1@127.0.0.1")
 2. Node.list -> toute la liste
 
+Step 5: Adding a Cache Genserver
 
+Put it in the supervisor Tree
+The Apothik.Cache is a name uniquely registered on each node (start_link)
 
+iex(master@127.0.0.1)4> :rpc.call(:"apothik_1@127.0.0.1", Apothik.Cache, :stats, [])
+0
+iex(master@127.0.0.1)5> :rpc.call(:"apothik_1@127.0.0.1", Apothik.Cache, :put, [:toto, 12])
+:ok
+iex(master@127.0.0.1)6> :rpc.call(:"apothik_1@127.0.0.1", Apothik.Cache, :stats, [])
+1
+
+.iex.exs => utils to be able to help the master
+Create get, put, stats, etc and fill (to fill a node)
+The idea is to use :rpc (remote procedure call. Module / Function / Arguments)
+And the function calls a Process with a name Apothik.Cache
