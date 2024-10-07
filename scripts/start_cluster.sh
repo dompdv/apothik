@@ -18,6 +18,8 @@ start_instance() {
   elixir --name $node_name -S mix run --no-halt &
 }
 
+mix compile
+
 # Start each instance
 for i in $(seq 1 $NUM_INSTANCES); do
   start_instance $i
