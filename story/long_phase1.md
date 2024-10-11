@@ -1,4 +1,4 @@
-# Un voyage à la découverte des applications distribuées avec Elixir
+# A la découverte des applications distribuées avec Elixir
 
 ## Pourquoi ?
 
@@ -6,7 +6,7 @@ Elixir et Erlang sont des technologies très cool que nous aimons et pratiquons 
 
 Mais la vraie promesse a toujours été l'espoir que des gens ordinaires comme nous puissent s'attaquer aux problèmes d'ingénierie très difficiles qui se posent dans le monde des applications *distribuées*.
 
-Inspirés par l'excellent exposé de [Johanna Larsonn à Code Beam Lite Mexico 2023]![https://www.youtube.com/watch?v=7yU9mvwZKoY], nous avons décidé d'être la preuve vivante que son objectif a été atteint : inspirer certains d'entre nous, simples mortels, à oser s'attaquer à ce monde mystérieux.
+Inspirés par l'excellent exposé de [Johanna Larsonn à Code Beam Lite Mexico 2023](https://www.youtube.com/watch?v=7yU9mvwZKoY), nous avons décidé d'être la preuve vivante que son objectif a été atteint : inspirer certains d'entre nous, simples mortels, à oser s'attaquer à ce monde mystérieux.
 
 Mais commencer seul était intimidant.  Nous avons décidé de faire équipe (Olivier & Dominique, deux vieux amis et amateurs d'Elixir) en s'attaquant à ce défi à 4 mains. Et d'abord de réserver un créneau horaire hebdomadaire pour voyager ensemble.
 
