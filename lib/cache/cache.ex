@@ -1,26 +1,18 @@
 defmodule Apothik.Cache do
   use GenServer
 
-  def get(k) do
-    GenServer.call(__MODULE__, {:get, k})
-  end
+  # Interface
+  def get(k), do: GenServer.call(__MODULE__, {:get, k})
 
-  def put(k, v) do
-    GenServer.call(__MODULE__, {:put, k, v})
-  end
+  def put(k, v), do: GenServer.call(__MODULE__, {:put, k, v})
 
-  def delete(k) do
-    GenServer.call(__MODULE__, {:delete, k})
-  end
+  def delete(k), do: GenServer.call(__MODULE__, {:delete, k})
 
-  def stats() do
-    GenServer.call(__MODULE__, :stats)
-  end
+  def stats(), do: GenServer.call(__MODULE__, :stats)
 
-  def start_link(args) do
-    GenServer.start_link(__MODULE__, args, name: __MODULE__)
-  end
+  def start_link(args), do: GenServer.start_link(__MODULE__, args, name: __MODULE__)
 
+  # Implementation
   @impl true
   def init(_args) do
     {:ok, %{}}

@@ -15,6 +15,8 @@ start_instance() {
 
   # Start the application using mix run
   # The node name and cookie need to be set for clustering
+  # Here, there is no cookie: the standard ~/.erlang.cookie file is automatically
+  # used (and generated if there is none)
   elixir --name $node_name -S mix run --no-halt &
 }
 
@@ -25,7 +27,4 @@ for i in $(seq 1 $NUM_INSTANCES); do
   start_instance $i
 done
 
-# Wait for all instances to finish
 wait
-
-echo "All instances have finished."

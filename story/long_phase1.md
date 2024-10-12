@@ -23,5 +23,299 @@ Parce que le sujet est difficile, nous ne pouvions pas sauter directement sur no
 
 Et bien sûr, cela implique de développer des petits outils annexes pour procéder aux expériences: charger le cache, observer l'état des machines, ajouter ou supprimer des machines, etc
 
-## C'est parti !
+## Préparons le terrain
+
+### Les noeuds
+Mais avant de pouvoir écrire du Elixir, il faut bien être capable de le faire tourner sur plusieurs machines. En réalité, il n'est pas besoin d'avoir plusieurs machines pour débuter. En effet, la fondation d'Erlang est une machine virtuelle, la **BEAM**, qui exécute le **Erlang Runtime System**, [détails ici](https://www.erlang.org/blog/a-brief-beam-primer/). Il est possible de démarrer plusieurs machines Erlang, sur un seul ordinateur. Vous allez me dire que ça n'est pas représentatif d'un cluster de 5 machines séparée. En général oui, mais pas pour Erlang qui rend cela transparent. Un message va s'envoyer de la même façon entre deux processus qu'ils soient situés dans la même machine virtuelle, dans deux machines virtuelles différentes, ou même que les machines virtuelles soient situées sur deux machines physiques différentes. Bien sûr, l'appel sera le même mais les propriétés du système pourront être différentes, car il faudra compter avec la latence, les possibilités de panne de réseau entre machines physiques, etc.
+
+Des machines virtuelles Erlang qui communiquent s'appellent des noeuds (voir [introduction à Erlang distribué](https://www.erlang.org/docs/17/reference_manual/distributed)). En Elixir, un module spécifique permet de le manipuler, le [moduele `Node`](https://hexdocs.pm/elixir/1.12/Node.html).
+
+Nous allons voir comment démarrer des noeuds qui communiquent entre eux.
+
+
+### Lancer 5 machines
+
+Avant le cluster, créons notre application `apothik`, avec un petit coup de `mix`. `mix new apothik --sup`. Puis `cd apothik && mix apothik` pour vérifier que tout va bien jusque là. Nous avons choisi de créer une application avec supervision (`--sup`). A dire vrai, nous l'avions fait sans superviseur au début, mais nous avons été obligé d'en rajouter un très vite. A la réflexion, une application Elixir sans superviseur est très rare.
+
+Maintenant, demandons à une IA de nous faire un script de lancement de 5 machines Erlang. Après avoir supprimé beaucoup de code inutile et adapté les commentaires, voilà le résultat, dans `/scripts/start_cluster.sh`:
+
+```bash
+#!/usr/bin/env bash
+
+# Number of instances
+NUM_INSTANCES=5
+
+# Application name
+APP_NAME="apothik"  # Replace with your application name
+
+# Start an instance of the application
+start_instance() {
+  local instance_id=$1
+  local node_name="${APP_NAME}_${instance_id}@127.0.0.1"
+
+  echo "Starting instance $instance_id with node $node_name..."
+
+  # Start the application using mix run
+  # The node name and cookie need to be set for clustering
+  # Here, there is no cookie: the standard ~/.erlang.cookie file is automatically
+  # used (and generated if there is none)
+  elixir --name $node_name -S mix run --no-halt &
+}
+
+mix compile
+
+# Start each instance
+for i in $(seq 1 $NUM_INSTANCES); do
+  start_instance $i
+done
+
+wait
+
+```
+
+Tout se joue au lancement de `elixir` (faire un `man elixir`, c'est très instructif). Chaque noeud a un nom de la forme `nom@ip_address`, indiqué par `--name`. 
+On lance l'application en lançant le script `mix run --no-halt`.  
+
+`--no-halt`garde la machine virtuelle Elixir en route même si l'application se termine. Sans cela, et parce que notre application ne fait encore rien, la machine virtuelle s'arrêterait 
+tout de suite.
+
+Le `&`indique de le lancer sur un processus (un processus de l'OS) fils du script bash.  Ainsi, la commande ne bloque pas le script, et les machines seront arrêtées quand le script s'arrête. 
+`wait` suspend le script. Cela permet d'arrêter par `ctrl-C` le script et en cascade toutes les machines virtuelles.
+
+Nous avons dû ajouter `mix compile` en amont car le lancement en parallèle de plusieurs `mix run` pouvait lancer des compilations qui se marchaient sur les pieds.
+
+Un petit `chmod u+x ./scripts/start_cluster.sh` pour donner des droits d'execution au script bash, et vous pouvez lancer vos 5 machines `./scripts/start_cluster.sh` !
+
+### Créer un cluster
+
+Pour l'instant, les 5 machines ne se connaissent pas, elles vivent leur vie indépendante l'une de l'autre. Pour former un cluster, il faut qu'elles se reconnaissent entre elles.
+Après avoir lancé vos machines dans un terminal, ouvrez un autre terminal et lancez `iex`.
+
+```
+% iex                        
+iex(1)> Node.ping(:"apothik_1@127.0.0.1")
+:pang
+```
+
+La fonction [`Node.ping`](https://hexdocs.pm/elixir/1.12/Node.html#ping/1) permet de connecter deux noeuds. 
+Elle répond `:pang` en cas d'échec, et `:pong` en cas de succès. Similaire à [`Node.connect`](https://hexdocs.pm/elixir/1.12/Node.html#connect/1) en plus drôle.
+
+Note importante, le nom complet du noeud est un atome. Nous avons écrit `:"apothik_1@127.0.0.1"` et non `"apothik_1@127.0.0.1"`, en préfixant par `:`.
+
+Après tentatives et tests, nous avons compris qu'il faut donner un nom à notre session `iex`.
+
+```
+iex --name master@127.0.0.1
+iex(master@127.0.0.1)1> Node.ping(:"apothik_1@127.0.0.1")
+:pong
+```
+
+**Ca marche** ! On en profiter pour mettre `iex --name master@127.0.0.1` dans `/scripts/start_master.sh`.
+
+Continuons:
+
+```terminal
+iex(master@127.0.0.1)2> Node.list
+[:"apothik_1@127.0.0.1"]
+iex(master@127.0.0.1)3> Node.ping(:"apothik_2@127.0.0.1")
+:pong
+iex(master@127.0.0.1)4> Node.list
+[:"apothik_1@127.0.0.1", :"apothik_2@127.0.0.1"]
+iex(master@127.0.0.1)6> :rpc.call(:"apothik_2@127.0.0.1", Node, :list, [])
+[:"master@127.0.0.1", :"apothik_1@127.0.0.1"]
+```
+
+`Node.list` liste tous les noeuds du cluster, à l'exception de l'appelant. Au fur et à mesure que l'on connecte un noeud, le cluster s'agrandit. 
+Il est possible d'appeler à distance une fonction ("Remote procedure call") à l'aide du module Erlang [`rpc`](https://www.erlang.org/doc/apps/kernel/rpc.html). 
+Quand on appelle `Node.list`sur `apothik_2@127.0.0.1`, on constate que ce noeud a une vision complète de de tous les noeuds du cluster. Il suffit donc de se
+connecter à *un seul* noeud du cluster pour le rejoindre et que tous les autres noeuds soient automatiquement mis au courant! La magie d'Erlang!
+
+Mais, minute, il me semble qu'il y a une faille de sécurité: on pourrait se connecter à un noeud à partir de son nom, puis éxécuter n'importe quel code dessus?
+Pas vraiment, quand on lance une machine virtuelle Erlang, elle est associée avec un `cookie`(une chaine de caractère secrète). Seules les machines
+lancées avec le même `cookie` peuvent se connecter entre elles. On peut specifier le cookie avec `--cookie`, mais si on ne le fait pas, le fichier
+`~/.erlang.cookie` est utilisé (et généré s'il n'existe pas). Comme on a lancé les machines du même utilisateur, elles avaient le même cookie.
+
+### Découverte automatique des noeuds entre eux
+
+Pour que le cluster se "monte" automatiquement, il faut que les noeuds se connectent entre eux au démarrage de l'application.
+Dans un cas aussi simple, c'est facile, car on a une liste connue de noeuds. Même s'il faut bien s'assurer de tenir compte des temps de démarrage des différents noeuds. 
+
+Mais autant s'appuyer sur le travail des autres (tant que ça n'est pas de la magie noire pour nous) et faire appel à [`libcluster`](`https://github.com/bitwalker/libcluster`). 
+Cette librairie gère une série de politiques de découverte, des simples au plus avancées.
+
+Ajoutons là dans `mix.exs`
+```elixir
+  defp deps do
+    [
+      {:libcluster, "~> 3.4"}
+    ]
+```
+
+(ne pas oublier le `mix deps.get`)
+Elle se lance dans l'arbre de supervision, dans `/lib/apothik/application.ex`
+```elixir
+defmodule Apothik.Application do
+  @moduledoc false
+
+  use Application
+
+  @impl true
+  def start(_type, _args) do
+    hosts = for i <- 1..5, do: :"apothik_#{i}@127.0.0.1"
+
+    topologies = [
+      apothik_cluster_1: [
+        strategy: Cluster.Strategy.Epmd,
+        config: [hosts: hosts]
+      ]
+    ]
+
+    children = [
+      {Cluster.Supervisor, [topologies, [name: Apothik.ClusterSupervisor]]},
+      Apothik.Cache
+    ]
+
+    Supervisor.start_link(children, strategy: :one_for_one, name: Apothik.Supervisor)
+  end
+end
+```
+
+Nous utilisons la stratégie de découverte la plus simple, via une liste finie de noms de noeuds, passée en paramètre du superviseur de `libcluster`:
+```elixir
+{Cluster.Supervisor, [topologies, [name: Apothik.ClusterSupervisor]]}
+```
+
+Lancez `./scripts/start_cluster.sh` et vous verrez les noeuds se découvrir:
+```
+17:32:13.703 [info] [libcluster:apothik_cluster_1] connected to :"apothik_2@127.0.0.1"
+etc...
+```
+
+Dans l'autre terminal, vérifiez que le cluster est monté:
+```
+% ./scripts/start_master.sh
+iex(master@127.0.0.1)1> Node.ping(:"apothik_1@127.0.0.1")
+:pong
+iex(master@127.0.0.1)2> Node.list
+[:"apothik_1@127.0.0.1", :"apothik_2@127.0.0.1", :"apothik_5@127.0.0.1",
+ :"apothik_3@127.0.0.1", :"apothik_4@127.0.0.1"]
+```
+
+Ca y est, nous pouvons lancer une application sur 5 serveurs qui forment un cluster Elixir !
+Nous pouvons démarrer la Phase 1
+
+## Phase 1 : Un Cache distribué, sans redondance, sur 5 machines fixes.
+
+### Ajoutons un système de cache
+
+Cet exemple est tellement classique qu'il est dans le officiel tutorial d'Elixir.
+
+```elixir
+defmodule Apothik.Cache do
+  use GenServer
+
+  # Interface
+  def get(k), do: GenServer.call(__MODULE__, {:get, k})
+
+  def put(k, v), do: GenServer.call(__MODULE__, {:put, k, v})
+
+  def delete(k), do: GenServer.call(__MODULE__, {:delete, k})
+
+  def stats(), do: GenServer.call(__MODULE__, :stats)
+
+  def start_link(args), do: GenServer.start_link(__MODULE__, args, name: __MODULE__)
+
+  # Implementation
+  @impl true
+  def init(_args) do
+    {:ok, %{}}
+  end
+
+  @impl true
+  def handle_call({:get, k}, _from, state) do
+    {:reply, Map.get(state, k), state}
+  end
+
+  def handle_call({:put, k, v}, _from, state) do
+    new_state = Map.put(state, k, v)
+    {:reply, :ok, new_state}
+  end
+
+  def handle_call({:delete, k}, _from, state) do
+    new_state = Map.delete(state, k)
+    {:reply, :ok, new_state}
+  end
+
+  def handle_call(:stats, _from, state) do
+    {:reply, map_size(state), state}
+  end
+end
+```
+
+Notez la fonction `stats` qui pour l'instant renvoie la taille du cache.
+
+Et dans `application.ex`:
+```elixir
+children = [
+    {Cluster.Supervisor, [topologies, [name: Apothik.ClusterSupervisor]]},
+    Apothik.Cache
+]
+```
+
+Attention cependant à ce code anodin, beaucoup de choses doivent être notées. 
+Quand on ajoute `Apothik.Cache` dans la supervision, la fonction `Apothik.Cache.start_link/1` est appelée, qui appelle `GenServer.start_link/3` dont la [documentation](https://hexdocs.pm/elixir/1.16.2/GenServer.html#start_link/3) vaut le détour. 
+Le point crucial ici est l'emploi de l'option `:name` avec un nom unique, le nom du module. Ce nom est inscrit dans un dictionnaire *propre à la machine virtuelle*.
+Cela permet d'envoyer un message à ce processus `GenServer` dans connaître son identifiant de processus (`pid`). Voir la [documentation](https://hexdocs.pm/elixir/1.16.2/GenServer.html#module-name-registration) pour d'autres possibilités. C'est ce qui permet, dans le code suivant, que le message arrive au bon processus:
+```elixir
+def get(k), do: GenServer.call(__MODULE__, {:get, k})
+```
+
+Comme ce nom est unique à la machine virtuelle, il y aura donc 5 processus de gestion de cache, de même nom, un par machine.
+
+Maintenant, retour dans le terminal:
+
+```
+% ./scripts/start_master.sh 
+iex(master@127.0.0.1)4> :rpc.call(:"apothik_1@127.0.0.1", Apothik.Cache, :stats, [])
+0
+iex(master@127.0.0.1)5> :rpc.call(:"apothik_1@127.0.0.1", Apothik.Cache, :put, [:toto, 12])
+:ok
+iex(master@127.0.0.1)6> :rpc.call(:"apothik_1@127.0.0.1", Apothik.Cache, :stats, [])
+1
+```
+
+Pourquoi passer par le `:rpc`? Nous pourrions lancer l'application aussi en faisant un `iex -S mix run`, et utiliser directement des fonctions comme `Apothik.Cache.get/1`, mais on courre le risque d'avoir notre `master` considéré comme faisant partie du cluster. D'ailleurs, essayez de le lancer pour voir les messages d'erreur de `libcluster`. 
+
+Dernier point, pout nous simplifier la vie, nous avons créé un fichier `.iex.exs`. Ce script est lancé au démarrage de `iex` et permet de créer un contexte.
+
+```elixir
+defmodule Master do
+  def stat(i) do
+    :rpc.call(:"apothik_#{i}@127.0.0.1", Apothik.Cache, :stats, [])
+  end
+  def get(i, k) do
+    :rpc.call(:"apothik_#{i}@127.0.0.1", Apothik.Cache, :get, [k])
+  end
+  def put(i, k, v) do
+    :rpc.call(:"apothik_#{i}@127.0.0.1", Apothik.Cache, :put, [k, v])
+  end
+  def delete(i, k) do
+    :rpc.call(:"apothik_#{i}@127.0.0.1", Apothik.Cache, :delete, [k])
+  end
+  def fill(i, n) do
+    Enum.each(1..n, fn j -> put(i, "k_#{i}_#{j}", j) end)
+  end
+end
+```
+
+Relancez le cluster. Vérifions que l'on peut mettre des choses en cache sur un noeud donné:
+```
+% ./scripts/start_master.sh
+iex(master@127.0.0.1)1> Master.fill(1,1000)
+:ok
+iex(master@127.0.0.1)2> Master.stat(1)
+1000
+```
+
+Voilà, maintenant nous avons 5 caches sur 5 machines. La prochaine étape est d'avoir un seul cache distribué sur 5 machines!
 
