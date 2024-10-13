@@ -130,10 +130,12 @@ Il est possible d'appeler à distance une fonction ("Remote procedure call") à 
 Quand on appelle `Node.list`sur `apothik_2@127.0.0.1`, on constate que ce noeud a une vision complète de de tous les noeuds du cluster. Il suffit donc de se
 connecter à *un seul* noeud du cluster pour le rejoindre et que tous les autres noeuds soient automatiquement mis au courant! La magie d'Erlang!
 
-Mais, minute, il me semble qu'il y a une faille de sécurité: on pourrait se connecter à un noeud à partir de son nom, puis éxécuter n'importe quel code dessus?
+Mais, minute, il me semble qu'il y a une faille de sécurité: on pourrait se connecter à un noeud à partir de son nom, puis exécuter n'importe quel code dessus?
 Pas vraiment, quand on lance une machine virtuelle Erlang, elle est associée avec un `cookie`(une chaine de caractère secrète). Seules les machines
 lancées avec le même `cookie` peuvent se connecter entre elles. On peut specifier le cookie avec `--cookie`, mais si on ne le fait pas, le fichier
 `~/.erlang.cookie` est utilisé (et généré s'il n'existe pas). Comme on a lancé les machines du même utilisateur, elles avaient le même cookie.
+
+Attention, le cookie n'est qu'un moyen de partitionner les clusters sur un même réseau physique (pour déployer un cluster de dév sur la même machine qu'un cluster de qualification, par exemple). Il ne protège pas des attaques malveillantes! Si le cluster est déployé sur un réseau public, il faudra adopter des mesures de sécurité supplémentaires : chiffrement inter-noeuds, authentification, etc.
 
 ### Découverte automatique des noeuds entre eux
 
@@ -141,7 +143,7 @@ Pour que le cluster se "monte" automatiquement, il faut que les noeuds se connec
 Dans un cas aussi simple, c'est facile, car on a une liste connue de noeuds. Même s'il faut bien s'assurer de tenir compte des temps de démarrage des différents noeuds. 
 
 Mais autant s'appuyer sur le travail des autres (tant que ça n'est pas de la magie noire pour nous) et faire appel à [`libcluster`](`https://github.com/bitwalker/libcluster`). 
-Cette librairie gère une série de politiques de découverte, des simples au plus avancées.
+Cette librairie gère une série de politiques de découverte, des simples au plus avancées (via DNS, multicast ...).
 
 Ajoutons là dans `mix.exs`
 ```elixir
@@ -265,7 +267,7 @@ children = [
 Attention cependant à ce code anodin, beaucoup de choses doivent être notées. 
 Quand on ajoute `Apothik.Cache` dans la supervision, la fonction `Apothik.Cache.start_link/1` est appelée, qui appelle `GenServer.start_link/3` dont la [documentation](https://hexdocs.pm/elixir/1.16.2/GenServer.html#start_link/3) vaut le détour. 
 Le point crucial ici est l'emploi de l'option `:name` avec un nom unique, le nom du module. Ce nom est inscrit dans un dictionnaire *propre à la machine virtuelle*.
-Cela permet d'envoyer un message à ce processus `GenServer` dans connaître son identifiant de processus (`pid`). Voir la [documentation](https://hexdocs.pm/elixir/1.16.2/GenServer.html#module-name-registration) pour d'autres possibilités. C'est ce qui permet, dans le code suivant, que le message arrive au bon processus:
+Cela permet d'envoyer un message à ce processus `GenServer` sans connaître son identifiant de processus (`pid`). Voir la [documentation](https://hexdocs.pm/elixir/1.16.2/GenServer.html#module-name-registration) pour d'autres possibilités. C'est ce qui permet, dans le code suivant, que le message arrive au bon processus:
 ```elixir
 def get(k), do: GenServer.call(__MODULE__, {:get, k})
 ```
@@ -284,9 +286,9 @@ iex(master@127.0.0.1)6> :rpc.call(:"apothik_1@127.0.0.1", Apothik.Cache, :stats,
 1
 ```
 
-Pourquoi passer par le `:rpc`? Nous pourrions lancer l'application aussi en faisant un `iex -S mix run`, et utiliser directement des fonctions comme `Apothik.Cache.get/1`, mais on courre le risque d'avoir notre `master` considéré comme faisant partie du cluster. D'ailleurs, essayez de le lancer pour voir les messages d'erreur de `libcluster`. 
+Pourquoi passer par le `:rpc`? Nous pourrions lancer l'application aussi en faisant un `iex -S mix run`, et utiliser directement des fonctions comme `Apothik.Cache.get/1`, mais on court le risque d'avoir notre `master` considéré comme faisant partie du cluster. D'ailleurs, essayez de le lancer pour voir les messages d'erreur de `libcluster`. 
 
-Dernier point, pout nous simplifier la vie, nous avons créé un fichier `.iex.exs`. Ce script est lancé au démarrage de `iex` et permet de créer un contexte.
+Dernier point, pour nous simplifier la vie, nous avons créé un fichier `.iex.exs`. Ce script est lancé au démarrage de `iex` et permet de créer un contexte.
 
 ```elixir
 defmodule Master do
