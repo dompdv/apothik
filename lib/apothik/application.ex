@@ -17,6 +17,7 @@ defmodule Apothik.Application do
 
     children = [
       {Cluster.Supervisor, [topologies, [name: Apothik.ClusterSupervisor]]},
+      Apothik.Cluster,
       Apothik.Cache
     ]
 

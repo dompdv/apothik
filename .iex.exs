@@ -20,4 +20,7 @@ defmodule Master do
   def kill(i) do
     :rpc.call(:"apothik_#{i}@127.0.0.1", System, :stop, [0])
   end
+  def cluster(i) do
+    :rpc.call(:"apothik_#{i}@127.0.0.1", Apothik.Cluster, :get_state, [])
+  end
 end
