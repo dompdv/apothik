@@ -5,7 +5,7 @@ defmodule Apothik.Application do
 
   @impl true
   def start(_type, _args) do
-    hosts = for i <- 1..5, do: :"apothik_#{i}@127.0.0.1"
+    hosts = Apothik.Cluster.node_list()
 
     topologies = [
       apothik_cluster_1: [
