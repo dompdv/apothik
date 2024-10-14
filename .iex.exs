@@ -16,6 +16,6 @@ defmodule Master do
   end
 
   def stat() do
-    Enum.map(1..5, fn i -> stat(i) end)
+    Enum.map(1..5, fn i -> {i,stat(i)} end)
   end
 end
