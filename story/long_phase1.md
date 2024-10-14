@@ -26,7 +26,7 @@ Et bien sûr, cela implique de développer des petits outils annexes pour procé
 ## Préparons le terrain
 
 ### Les noeuds
-Mais avant de pouvoir écrire du Elixir, il faut bien être capable de le faire tourner sur plusieurs machines. En réalité, il n'est pas besoin d'avoir plusieurs machines pour débuter. En effet, la fondation d'Erlang est une machine virtuelle, la **BEAM**, qui exécute le **Erlang Runtime System**, [détails ici](https://www.erlang.org/blog/a-brief-beam-primer/). Il est possible de démarrer plusieurs machines Erlang, sur un seul ordinateur. Vous allez me dire que ça n'est pas représentatif d'un cluster de 5 machines séparée. En général oui, mais pas pour Erlang qui rend cela transparent. Un message va s'envoyer de la même façon entre deux processus qu'ils soient situés dans la même machine virtuelle, dans deux machines virtuelles différentes, ou même que les machines virtuelles soient situées sur deux machines physiques différentes. Bien sûr, l'appel sera le même mais les propriétés du système pourront être différentes, car il faudra compter avec la latence, les possibilités de panne de réseau entre machines physiques, etc.
+Mais avant de pouvoir écrire du Elixir, il faut bien être capable de le faire tourner sur plusieurs machines. En réalité, il n'est pas besoin d'avoir plusieurs machines pour débuter. En effet, la fondation d'Erlang est une machine virtuelle, la **BEAM**, qui exécute le **Erlang Runtime System**, [détails ici](https://www.erlang.org/blog/a-brief-beam-primer/). Il est possible de démarrer plusieurs machines Erlang, sur un seul ordinateur. Vous allez me dire que ça n'est pas représentatif d'un cluster de 5 machines séparée. En général oui, mais pas pour Erlang qui rend cela transparent. Un message va s'envoyer de la même façon entre deux processus qu'ils soient situés dans la même machine virtuelle, dans deux machines virtuelles différentes, ou même que les machines virtuelles soient situées sur deux machines physiques différentes. L'appel sera le même mais, bien sûr, les propriétés du système pourront être différentes, car il faudra compter avec la latence, les possibilités de panne de réseau entre machines physiques, etc.
 
 Des machines virtuelles Erlang qui communiquent s'appellent des noeuds (voir [introduction à Erlang distribué](https://www.erlang.org/docs/17/reference_manual/distributed)). En Elixir, un module spécifique permet de le manipuler, le [moduele `Node`](https://hexdocs.pm/elixir/1.12/Node.html).
 
@@ -110,7 +110,9 @@ iex(master@127.0.0.1)1> Node.ping(:"apothik_1@127.0.0.1")
 :pong
 ```
 
-**Ca marche** ! On en profiter pour mettre `iex --name master@127.0.0.1` dans `/scripts/start_master.sh`.
+**Ca marche** ! 
+
+On en profite pour mettre `iex --name master@127.0.0.1` dans `/scripts/start_master.sh`.
 
 Continuons:
 
@@ -126,6 +128,7 @@ iex(master@127.0.0.1)6> :rpc.call(:"apothik_2@127.0.0.1", Node, :list, [])
 ```
 
 `Node.list` liste tous les noeuds du cluster, à l'exception de l'appelant. Au fur et à mesure que l'on connecte un noeud, le cluster s'agrandit. 
+
 Il est possible d'appeler à distance une fonction ("Remote procedure call") à l'aide du module Erlang [`rpc`](https://www.erlang.org/doc/apps/kernel/rpc.html). 
 Quand on appelle `Node.list`sur `apothik_2@127.0.0.1`, on constate que ce noeud a une vision complète de de tous les noeuds du cluster. Il suffit donc de se
 connecter à *un seul* noeud du cluster pour le rejoindre et que tous les autres noeuds soient automatiquement mis au courant! La magie d'Erlang!
@@ -135,7 +138,8 @@ Pas vraiment, quand on lance une machine virtuelle Erlang, elle est associée av
 lancées avec le même `cookie` peuvent se connecter entre elles. On peut specifier le cookie avec `--cookie`, mais si on ne le fait pas, le fichier
 `~/.erlang.cookie` est utilisé (et généré s'il n'existe pas). Comme on a lancé les machines du même utilisateur, elles avaient le même cookie.
 
-Attention, le cookie n'est qu'un moyen de partitionner les clusters sur un même réseau physique (pour déployer un cluster de dév sur la même machine qu'un cluster de qualification, par exemple). Il ne protège pas des attaques malveillantes! Si le cluster est déployé sur un réseau public, il faudra adopter des mesures de sécurité supplémentaires : chiffrement inter-noeuds, authentification, etc.
+**Attention**, le cookie n'est qu'un moyen de partitionner les clusters sur un même réseau physique (pour déployer un cluster de dév sur la même machine qu'un cluster de qualification, par exemple). 
+Il ne protège pas des attaques malveillantes! Si le cluster est déployé sur un réseau public, il faudra adopter des mesures de sécurité supplémentaires : chiffrement inter-noeuds, authentification, etc.
 
 ### Découverte automatique des noeuds entre eux
 
@@ -210,7 +214,7 @@ Nous pouvons démarrer la Phase 1
 
 ### Ajoutons un système de cache
 
-Cet exemple est tellement classique qu'il est dans le officiel tutorial d'Elixir.
+Cet exemple est tellement classique qu'il est dans le tutorial officiel d'Elixir.
 
 ```elixir
 defmodule Apothik.Cache do
@@ -256,7 +260,7 @@ end
 
 Notez la fonction `stats` qui pour l'instant renvoie la taille du cache.
 
-Et dans `application.ex`:
+Et dans `application.ex`, on ajoute le système de cache dans la supervision:
 ```elixir
 children = [
     {Cluster.Supervisor, [topologies, [name: Apothik.ClusterSupervisor]]},
@@ -266,8 +270,11 @@ children = [
 
 Attention cependant à ce code anodin, beaucoup de choses doivent être notées. 
 Quand on ajoute `Apothik.Cache` dans la supervision, la fonction `Apothik.Cache.start_link/1` est appelée, qui appelle `GenServer.start_link/3` dont la [documentation](https://hexdocs.pm/elixir/1.16.2/GenServer.html#start_link/3) vaut le détour. 
-Le point crucial ici est l'emploi de l'option `:name` avec un nom unique, le nom du module. Ce nom est inscrit dans un dictionnaire *propre à la machine virtuelle*.
-Cela permet d'envoyer un message à ce processus `GenServer` sans connaître son identifiant de processus (`pid`). Voir la [documentation](https://hexdocs.pm/elixir/1.16.2/GenServer.html#module-name-registration) pour d'autres possibilités. C'est ce qui permet, dans le code suivant, que le message arrive au bon processus:
+
+Le point crucial ici est l'emploi de l'option `:name` avec un nom unique, le nom du module. Ce nom est inscrit dans un dictionnaire **propre à la machine virtuelle**.
+Cela permet d'envoyer un message à ce processus `GenServer` sans connaître son identifiant de processus (`pid`). Voir la [documentation](https://hexdocs.pm/elixir/1.16.2/GenServer.html#module-name-registration) pour d'autres possibilités. 
+
+C'est ce qui permet, dans le code suivant, que le message arrive au bon processus:
 ```elixir
 def get(k), do: GenServer.call(__MODULE__, {:get, k})
 ```
@@ -286,9 +293,11 @@ iex(master@127.0.0.1)6> :rpc.call(:"apothik_1@127.0.0.1", Apothik.Cache, :stats,
 1
 ```
 
-Pourquoi passer par le `:rpc`? Nous pourrions lancer l'application aussi en faisant un `iex -S mix run`, et utiliser directement des fonctions comme `Apothik.Cache.get/1`, mais on court le risque d'avoir notre `master` considéré comme faisant partie du cluster. D'ailleurs, essayez de le lancer pour voir les messages d'erreur de `libcluster`. 
+Pourquoi passer par le `:rpc`? Nous avons seulement fait `iex`. L'application n'est pas lancée, donc le module `Apothik.Cache` est inconnu de cette machine virtuelle. ùNous pourrions lancer l'application aussi en faisant un `iex -S mix run`, et utiliser directement des fonctions comme `Apothik.Cache.get/1`, mais on court le risque d'avoir notre `master` considéré comme faisant partie du cluster. D'ailleurs, essayez de le lancer pour voir les messages d'erreur de `libcluster`. 
 
-Dernier point, pour nous simplifier la vie, nous avons créé un fichier `.iex.exs`. Ce script est lancé au démarrage de `iex` et permet de créer un contexte.
+Dernier point, pour nous simplifier la vie, nous avons créé un fichier `.iex.exs`. Ce script est lancé au démarrage de `iex` et permet de créer un contexte aux sessions de `iex` et notamment de charger des fonctions utilitaires.
+
+Ici, ajoutons des fonctions permettant de jouer avec nos caches.
 
 ```elixir
 defmodule Master do
@@ -319,5 +328,5 @@ iex(master@127.0.0.1)2> Master.stat(1)
 1000
 ```
 
-Voilà, maintenant nous avons 5 caches sur 5 machines. La prochaine étape est d'avoir un seul cache distribué sur 5 machines!
+Voilà, maintenant nous avons 5 caches sur 5 machines. La prochaine étape est d'avoir **un seul** cache **distribué** sur 5 machines!
 
