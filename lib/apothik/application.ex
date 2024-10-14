@@ -2,10 +2,11 @@ defmodule Apothik.Application do
   @moduledoc false
 
   use Application
+  @nb_nodes 5
 
   @impl true
   def start(_type, _args) do
-    hosts = Apothik.Cluster.node_list()
+    hosts = Apothik.Cluster.node_list(@nb_nodes)
 
     topologies = [
       apothik_cluster_1: [
