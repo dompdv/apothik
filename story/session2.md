@@ -43,5 +43,52 @@ on ajoute dans .iex une stat global
 
 COMMIT => on a un cache distribué
 
+==================
+PHASE 2: Ajout et suppression de machines
+
+Comment enlever une machine ou ajouter une machine du cluster.
+
+
+On ajoute un moyen de tuer un Node (Node.stop)
+{:error, :not_allowed}; En fait, c'est System.stop
+Master.stat() -> ex(master@127.0.0.1)5> Master.stat
+[{1, {:badrpc, :nodedown}}, {2, 996}, {3, 1012}, {4, 1021}, {5, 945}]
+
+
+
+Première étape, utliser Node.list;
+iex(master@127.0.0.1)6> Master.fill(1, 5000)
+:ok
+iex(master@127.0.0.1)7> Master.stat
+[{1, 825}, {2, 827}, {3, 814}, {4, 834}, {5, 817}]
+iex(master@127.0.0.1)8> Master.stat
+[{1, 825}, {2, 827}, {3, 814}, {4, 834}, {5, 817}]
+iex(master@127.0.0.1)9> Node.list
+[:"apothik_1@127.0.0.1", :"apothik_4@127.0.0.1", :"apothik_5@127.0.0.1",
+ :"apothik_2@127.0.0.1", :"apothik_3@127.0.0.1"]
+
+ On a perdu 1000 trucs
+VOIR le COMMIT 2.1T => première erreur 
+
+Node.monitor :net_kernel.monitor_nodes(true)
+POur voir les événements
+Ajouter le Apothik.Cluster dans Application (supervision) (après le libcluster)
+Ca marche pas (pas de nodeup)
+On inverse et on met libcluster après => ça marche
+
+Est ce que libcluster est synchrone ? => dans le shell Start_cluster, aller que jusqu'à 4.
+
+On ajouter les handle_info(:nodeup et :nodedown)
+
+===> impact sur le cache
+On change le nb_nodes => on ajoute une fonction
+
+Test => 
+
+
+Comment ajouter un noeud à la volée ? => pb de numérotation ensuite
+
+
+
 
 
