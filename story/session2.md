@@ -14,10 +14,10 @@ Process.send() avec {dest,node)}
 On fait un handle_info pour voir si ça marche
 
 @impl true
-  def handle_info(msg, state) do
-    IO.inspect(msg)
-    {:noreply, state}
-  end
+def handle_info(msg, state) do
+  IO.inspect(msg)
+  {:noreply, state}
+end
 
 Du coup, on essaie directement avec GenServer.call
 

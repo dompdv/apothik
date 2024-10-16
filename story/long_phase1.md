@@ -330,3 +330,159 @@ iex(master@127.0.0.1)2> Master.stat(1)
 
 Voilà, maintenant nous avons 5 caches sur 5 machines. La prochaine étape est d'avoir **un seul** cache **distribué** sur 5 machines!
 
+### Le plan d'ensemble
+
+Pour avoir se comporte comme un seul cache, il faut que l'on répartisse le stockage le plus uniformément possible sur chacun des 5 noeuds. Un couple {clé, valeur} sera présent sur un seul des noeuds.
+
+De plus, nous souhaitons pouvoir interroger n'importe quel noeud du cluster pour obtenir une valeur. Nous ne voulons pas qu'un noeud spécialisé joue le rôle de point d'entrée particulier.
+
+Nous devons donc résoudre deux questions: comment savoir que telle clé est sur tel serveur et comment envoyer un message à un processus situé sur un autre noeud.
+
+### Envoyer un message à un autre noeud
+
+Il a fallu fouiller un peu. Une première idée est d'aller voir la documentation de [`Process`](https://hexdocs.pm/elixir/Process.html). 
+Cela semble prometteur, la fonction foncamentale [`Process.send/3`](https://hexdocs.pm/elixir/Process.html#send/3) permet d'envoyer un message à partir 
+de la connaissance du nom du process (local à la machine virtuelle) et du nom du noeud:  `Process.send({name_of_the_process, node_name}, msg, options)`.
+
+Avant de faire un test d'envoi de message au cache, rajoutons quelques lignes dans `cache/cache.ex`
+```elixir
+  @impl true
+  def handle_info(msg, state) do
+    IO.inspect(msg)
+    {:noreply, state}
+  end
+```
+En effet, si l'on envoie un message quelconque à un `GenServer` (un message qui ne soit pas un `call` ou un `cast` par exemple), le callback `handle_info` est appelé.
+
+Essayons:
+``` 
+% ./scripts/start_master.sh
+iex(master@127.0.0.1)1> Process.send({Apothik.Cache, :"apothik_1@127.0.0.1"}, "hey there", [])
+:ok
+```
+
+And `"hey there"` appears in the cluster's terminal! Tentons notre chance:
+
+```
+iex(master@127.0.0.1)2>GenServer.call({Apothik.Cache, :"apothik_1@127.0.0.1"}, {:put, 1, "something"})
+:ok
+iex(master@127.0.0.1)3> GenServer.call({Apothik.Cache, :"apothik_1@127.0.0.1"}, :stats)
+1
+iex(master@127.0.0.1)4> GenServer.call({Apothik.Cache, :"apothik_1@127.0.0.1"}, {:get,1})
+"something"
+```
+Visiblement, c'est le même fonctionnement avec `GenServer.call/3`! Ca y est, nous avons la première pièce manquante.
+
+### Envoyer le message sur le bon noeud, à partir de n'importe quel noeud
+
+Dans `cache/cache.ex`, on transforme les appels d'interface en, par exemple: 
+```elixir
+def get(k) do
+  node = key_to_node(k)
+  GenServer.call({__MODULE__, node}, {:get, k})
+end
+```
+Supposons que `key_to_node` indique sur quel noeud est stocké la clé.
+Si j'appelle la fonction `Apothik.Cache.get("a_key")` (par exemple en faisant `:rpc.call(:"apothik_1@127.0.0.1", Apothik.Cache, :get, ["a_key"]))`), et que `key_to_node("a_key)` renvoie `:"apothik_1@127.0.0.1"`, alors un message partira de `apothik_1` vers `apothik_2` puis reviendra en réponse de `apothik_2` vers `apothik_1` avec la réponse. On voit donc que tous les noeuds du cluster jouent le même rôle et peuvent répondre à toutes les requêtes.
+
+### La fonction de hashing
+
+La clé (jeu de mot) de la solution est d'utiliser une méthode de hashing.  Une méthode de hashing est une fonction mathématique déterministe qui prend une chaine binaire (donc un nombre arbitrairement grand) et qui renvoie un nombre entier dans un intervalle fixe (qui peut être petit ou immense). Ces fonctions possèdent aussi des propriétés utiles. Par exemple, mla propriété que deux nombres très voisins en entrée vont donner des résultats très différents. Et que l'intervalle de sortie est bien "balayé". 
+
+Erlang propose une méthode de hashing bien commode [`:erlang.phash2/2`](https://www.erlang.org/doc/apps/erts/erlang.html#phash2/2). Elle existe avec 1 ou 2 arguments. Avec deux arguments, les valeurs de sorties sont dans l'intervalle 0..argument.
+
+Essayons:
+```
+% iex
+iex(1)> :erlang.phash2(1)
+2614250
+iex(2)> :erlang.phash2(2)
+27494836
+iex(3)> :erlang.phash2(2,10)
+8
+iex(4)> :erlang.phash2(1,10)
+2
+iex(5)> (for i<-1..1000, do: :erlang.phash2(i, 5)) |> Enum.frequencies
+%{0 => 214, 1 => 179, 2 => 207, 3 => 209, 4 => 191}
+iex(6)> (for i<-1..100_000, do: :erlang.phash2(i, 5)) |> Enum.frequencies
+%{0 => 20002, 1 => 20054, 2 => 20130, 3 => 19943, 4 => 19871}
+```
+
+On voit que les valeurs de sortie sont bien réparties de 0 à 4.
+
+### Répartir les clés sur les serveurs
+
+D'abord, faisons un peu le ménage et rassemblons la gestion du cluster dans `apothik/cluster.ex`
+```elixir
+defmodule Apothik.Cluster do
+  @nb_nodes 5
+
+  def nb_nodes(), do: @nb_nodes
+
+  def node_name(i), do: :"apothik_#{i}@127.0.0.1"
+
+  def node_list() do
+    for i <- 1..nb_nodes(), do: node_name(i)
+  end
+end
+```
+
+Cela change l'appel dans `apothik/application.ex`
+```elixir
+-    hosts = for i <- 1..5, do: :"apothik_#{i}@127.0.0.1"
++    hosts = Apothik.Cluster.node_list()
+```
+
+Et l'on peut maintenant implémenter `key_to_node/1` dans `cache/cache.ex`
+```elixir
+defmodule Apothik.Cache do
+  use GenServer
+  alias Apothik.Cluster
+
+  # Interface
+  def get(k) do
+    node = key_to_node(k)
+    GenServer.call({__MODULE__, node}, {:get, k})
+  end
+
+  def put(k, v) do
+    node = key_to_node(k)
+    GenServer.call({__MODULE__, node}, {:put, k, v})
+  end
+
+  def delete(k) do
+    node = key_to_node(k)
+    GenServer.call({__MODULE__, node}, {:delete, k})
+  end
+
+  def stats(), do: GenServer.call(__MODULE__, :stats)
+
+  def start_link(args), do: GenServer.start_link(__MODULE__, args, name: __MODULE__)
+
+  # Implementation
+
+  defp key_to_node(k) do
+    (:erlang.phash2(k, Cluster.nb_nodes()) + 1)
+    |> Cluster.node_name()
+  end
+
+  (... same as before...)
+end
+```
+
+La fonction est très simple: la clé donne un numéro de noeud entre 0 et 4, et on trouve le nom du cluster à partir de là.
+On n'est pas très fier de la fonction `def node_name(i), do: :"apothik_#{i}@127.0.0.1"` qui pourrait allouer trop d'atomes.
+Mais nous n'allons pas creuser ce point.
+
+Remplissons le cache
+```
+% ./scripts/start_master.sh
+iex(master@127.0.0.1)1> Master.fill(1, 5000)
+:ok
+iex(master@127.0.0.1)2> for i<-1..5, do: Master.stat(i)
+[1026, 996, 1012, 1021, 945]
+iex(master@127.0.0.1)3> (for i<-1..5, do: Master.stat(i)) |> Enum.sum
+5000
+```
+
+On a envoyé 5000 valeurs dans le cache distribué via le noeud 1. On constate que les valeurs ont bien été distribuées sur les 5 noeuds. Ca y est, nous avons un cache distribué sur 5 machines !
