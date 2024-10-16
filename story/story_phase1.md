@@ -17,7 +17,7 @@ Cette série d'articles est le récit non censuré de nos tentatives. Ce n'est p
 Parce que le sujet est difficile, nous ne pouvions pas sauter directement sur nos claviers et coder une base de données distribuée, tolérante aux fautes et massivement extensible.  Nous avons dû concevoir un plan avec une courbe d'apprentissage que l'on espère douce. Grâce à nos premières lectures et un premier vernis, nous avons conçu un plan par phase qui ressemblait un peu à cela:
 - *Quelle application?* La question n'est pas de créer une application complexe, mais plutôt de lui donner les bonnes qualités dans un contexte distribué. Choisissons un simple cache clé-valeur.
 - *Phase 1 :* Un Cache distribué, sans redondance, sur 5 machines fixes.
-- *Phase 2 :* Même chose, mais avec avec un cluster dynamique (ajout et perte de machine). Explorer l'influence des fonctions de répartition des clés.
+- *Phase 2 :* Même chose, mais avec un cluster dynamique (ajout et perte de machine). Explorer l'influence des fonctions de répartition des clés.
 - *Phase 3 :* Ajout de redondance de stockage (la clé est recopiée sur plusieurs machines) pour garantir la conservation des données malgré la perte de machine. Gérer un cluster dynamique et des pannes
 - *Phase 4 :* Si on arrive là, on peut se rapprocher de l'idée d'une base de données: conservation d'un état sur un cluster dynamique sans perte de données et avec une garantie d'atomicité sur les changements. 
 
