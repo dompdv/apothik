@@ -332,16 +332,16 @@ Voilà, maintenant nous avons 5 caches sur 5 machines. La prochaine étape est d
 
 ### Le plan d'ensemble
 
-Pour avoir se comporte comme un seul cache, il faut que l'on répartisse le stockage le plus uniformément possible sur chacun des 5 noeuds. Un couple {clé, valeur} sera présent sur un seul des noeuds.
+Pour que le cluster se comporte comme un seul cache, il faut que l'on répartisse le stockage le plus uniformément possible sur chacun des 5 noeuds. Un couple {clé, valeur} sera alors présent sur un seul des noeuds.
 
 De plus, nous souhaitons pouvoir interroger n'importe quel noeud du cluster pour obtenir une valeur. Nous ne voulons pas qu'un noeud spécialisé joue le rôle de point d'entrée particulier.
 
-Nous devons donc résoudre deux questions: comment savoir que telle clé est sur tel serveur et comment envoyer un message à un processus situé sur un autre noeud.
+Nous devons donc résoudre deux questions:  comment envoyer un message à un processus situé sur un autre noeud et comment savoir que telle clé est sur tel serveur.
 
 ### Envoyer un message à un autre noeud
 
 Il a fallu fouiller un peu. Une première idée est d'aller voir la documentation de [`Process`](https://hexdocs.pm/elixir/Process.html). 
-Cela semble prometteur, la fonction foncamentale [`Process.send/3`](https://hexdocs.pm/elixir/Process.html#send/3) permet d'envoyer un message à partir 
+Cela semble prometteur, la fonction fondamentale [`Process.send/3`](https://hexdocs.pm/elixir/Process.html#send/3) permet d'envoyer un message à partir 
 de la connaissance du nom du process (local à la machine virtuelle) et du nom du noeud:  `Process.send({name_of_the_process, node_name}, msg, options)`.
 
 Avant de faire un test d'envoi de message au cache, rajoutons quelques lignes dans `cache/cache.ex`
@@ -361,7 +361,7 @@ iex(master@127.0.0.1)1> Process.send({Apothik.Cache, :"apothik_1@127.0.0.1"}, "h
 :ok
 ```
 
-And `"hey there"` appears in the cluster's terminal! Tentons notre chance:
+Et `"hey there"` apparaît dans le terminal du cluster. Allez, on tente avec `GenServer.call`:
 
 ```
 iex(master@127.0.0.1)2>GenServer.call({Apothik.Cache, :"apothik_1@127.0.0.1"}, {:put, 1, "something"})
@@ -371,6 +371,7 @@ iex(master@127.0.0.1)3> GenServer.call({Apothik.Cache, :"apothik_1@127.0.0.1"}, 
 iex(master@127.0.0.1)4> GenServer.call({Apothik.Cache, :"apothik_1@127.0.0.1"}, {:get,1})
 "something"
 ```
+
 Visiblement, c'est le même fonctionnement avec `GenServer.call/3`! Ca y est, nous avons la première pièce manquante.
 
 ### Envoyer le message sur le bon noeud, à partir de n'importe quel noeud
@@ -387,7 +388,7 @@ Si j'appelle la fonction `Apothik.Cache.get("a_key")` (par exemple en faisant `:
 
 ### La fonction de hashing
 
-La clé (jeu de mot) de la solution est d'utiliser une méthode de hashing.  Une méthode de hashing est une fonction mathématique déterministe qui prend une chaine binaire (donc un nombre arbitrairement grand) et qui renvoie un nombre entier dans un intervalle fixe (qui peut être petit ou immense). Ces fonctions possèdent aussi des propriétés utiles. Par exemple, mla propriété que deux nombres très voisins en entrée vont donner des résultats très différents. Et que l'intervalle de sortie est bien "balayé". 
+La clé (jeu de mot!) de la solution est d'utiliser une méthode de hashing.  Une méthode de hashing est une fonction mathématique déterministe qui prend une chaine binaire (donc un nombre arbitrairement grand) et qui renvoie un nombre entier dans un intervalle fixe (qui peut être petit ou grand, selon les applications). Ces fonctions possèdent aussi des propriétés bien choisies. Par exemple, la propriété que deux nombres très voisins en entrée vont donner des résultats très différents en sortie. Et que l'intervalle de sortie est bien "balayé": mathématiquement, tous les éléments de l'ensemble d'arrivée ont des nombres d'antécédents comparables.
 
 Erlang propose une méthode de hashing bien commode [`:erlang.phash2/2`](https://www.erlang.org/doc/apps/erts/erlang.html#phash2/2). Elle existe avec 1 ou 2 arguments. Avec deux arguments, les valeurs de sorties sont dans l'intervalle 0..argument.
 
@@ -412,7 +413,7 @@ On voit que les valeurs de sortie sont bien réparties de 0 à 4.
 
 ### Répartir les clés sur les serveurs
 
-D'abord, faisons un peu le ménage et rassemblons la gestion du cluster dans `apothik/cluster.ex`
+D'abord, faisons un peu le ménage. On rassemble la connaissance du cluster dans un module spécialisé: `apothik/cluster.ex`
 ```elixir
 defmodule Apothik.Cluster do
   @nb_nodes 5
@@ -433,7 +434,7 @@ Cela change l'appel dans `apothik/application.ex`
 +    hosts = Apothik.Cluster.node_list()
 ```
 
-Et l'on peut maintenant implémenter `key_to_node/1` dans `cache/cache.ex`
+Tout est prêt pour implémenter `key_to_node/1` dans `cache/cache.ex`
 ```elixir
 defmodule Apothik.Cache do
   use GenServer
@@ -462,8 +463,7 @@ defmodule Apothik.Cache do
   # Implementation
 
   defp key_to_node(k) do
-    (:erlang.phash2(k, Cluster.nb_nodes()) + 1)
-    |> Cluster.node_name()
+    (:erlang.phash2(k, Cluster.nb_nodes()) + 1) |> Cluster.node_name()
   end
 
   (... same as before...)
@@ -471,10 +471,9 @@ end
 ```
 
 La fonction est très simple: la clé donne un numéro de noeud entre 0 et 4, et on trouve le nom du cluster à partir de là.
-On n'est pas très fier de la fonction `def node_name(i), do: :"apothik_#{i}@127.0.0.1"` qui pourrait allouer trop d'atomes.
-Mais nous n'allons pas creuser ce point.
+On n'est pas très fier de la fonction `def node_name(i), do: :"apothik_#{i}@127.0.0.1"` qui pourrait allouer trop d'atomes (peut-être, pas sûr, il faudrait creuser mais ça n'est pas l'objet de cette phase).
 
-Remplissons le cache
+Maintenant, remplissons le cache pour voir ce qui se passe:
 ```
 % ./scripts/start_master.sh
 iex(master@127.0.0.1)1> Master.fill(1, 5000)
@@ -485,4 +484,6 @@ iex(master@127.0.0.1)3> (for i<-1..5, do: Master.stat(i)) |> Enum.sum
 5000
 ```
 
-On a envoyé 5000 valeurs dans le cache distribué via le noeud 1. On constate que les valeurs ont bien été distribuées sur les 5 noeuds. Ca y est, nous avons un cache distribué sur 5 machines !
+On a envoyé 5000 valeurs dans le cache distribué via le noeud 1. On constate que les valeurs ont bien été distribuées assez uniformément sur les 5 noeuds. 
+
+Nous avons un cache distribué sur 5 machines ! Phase 1 accomplie !
