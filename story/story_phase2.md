@@ -2,16 +2,16 @@
 
 ### Comment enlever une machine d'un cluster ?
 
-Une première tentative avec [`Node.stop/0`]( :rpc.call(:"apothik_#{i}@127.0.0.1", Apothik.Cache, :stats, [])).
+Une première tentative avec [`Node.stop/0`](https://hexdocs.pm/elixir/Node.html#stop/0).
 ```
 % ./scripts/start_master.sh
 iex(master@127.0.0.1)1>  :rpc.call(:"apothik_1@127.0.0.1", Node, :stop, [])
 {:error, :not_allowed} 
 ```
-Ca ne marche pas. Nous aurions dû lire la documentation avec plus d'attention car cela fonction avec des noeuds 
+Ca ne marche pas. Nous aurions dû lire la documentation avec plus d'attention car cela ne fonctionne qu'avec des noeuds 
 lancés avec `Node.start/3` et pas des noeuds lancés en ligne de commande.
 
-En fait, c'est `System.stop/0` qui fait l'affaire:
+En fait, c'est [`System.stop/0`](https://hexdocs.pm/elixir/System.html#stop/1) qui fait l'affaire:
 ```
 iex(master@127.0.0.1)2> :rpc.call(:"apothik_1@127.0.0.1", System, :stop, [])
 :ok
@@ -48,8 +48,7 @@ On a bien perdu les 1023 clés du noeud 1.
 Le problème, c'est que le nombre de machines était fixé dans `Apothik.Cluster` avec `@nb_nodes 5`. 
 Ce que l'on souhaite, c'est que la fonction `key_to_node/1` s'adapte automatiquement au nombre de machines qui fonctionnent.
 
-Pour cela, il faut que l'on puisse monitorer le fait que des machines sortent ou entrent dans le cluster. 
-C'est possible grâce à la fonction [`:net_kernel.monitor_nodes/1`](https://www.erlang.org/docs/25/man/net_kernel#monitor_nodes-2) qui permet à un processus de s'abonner aux événements du cycle de vie des noeuds.
+Pour cela, il faut que l'on puisse monitorer le fait que des machines sortent ou entrent dans le cluster. C'est possible grâce à la fonction [`:net_kernel.monitor_nodes/1`](https://www.erlang.org/docs/25/man/net_kernel#monitor_nodes-2) qui permet à un processus de s'abonner aux événements du cycle de vie des noeuds.
 
 Nous faisons évoluer `apothik/cluster.ex` pour monitorer le cluster:
 ```elixir
@@ -111,7 +110,7 @@ end
 
 ```
 
-Ce n'est plus une simple librairie mais un `GenServer` qui faut lancer dans l'arbre de supervision, dans `apothik/application.ex`
+Ce n'est plus une simple librairie mais un `GenServer` qu'il faut lancer dans l'arbre de supervision, depuis `apothik/application.ex`
 ```elixir
 children = [
     {Cluster.Supervisor, [topologies, [name: Apothik.ClusterSupervisor]]},
@@ -130,7 +129,7 @@ Le processus s'abonne aux événements dans `init/1` avec `:net_kernel.monitor_n
 Nous avons choisi (est-ce la meilleure solution, le débat n'est pas tranché entre nous) que cette liste dynamique soit immédiatement communiquée à `Apothik.Cache`. 
 Ce dernier évolue:
 - son état est maintenant un couple `{liste de noeud du cluster, memoire cache}`. Voir l'initialisation dans `init/1`
-- les fonctions `get` etc sont adaptée pour tenir compte de ce changement de structure de l'état
+- les fonctions `get` etc sont adaptées pour tenir compte de ce changement de structure de l'état
 - une fonction `update_nodes/1` permet de mettre à jour la liste des noeuds. Elle est appelée par `Apothik.Cluster` à chaque événement
 - la fonction `key_to_node/1` a bien changé. Elle n'est plus exécutée par le code appelant, mais exécutée dans le processus `Apothik.Cache`.
 ```elixir
@@ -201,8 +200,8 @@ Commentons un peu plus en détail
   end
 ```
 
-`phash2` renvoie un nombre entre 0 et le nombre de noeud du cluster - 1. 
-Ce nombre ne correspond plus directement à un nom de serveur mais à un indice dans la liste de noeud. On voit bien que la même clé avant et après le départ d'un serveur a toutes les chances de ne pas se retrouver au même endroit.
+`phash2` renvoie un nombre entre 0 et le nombre de noeuds du cluster - 1. 
+Ce nombre ne correspond plus directement à un nom de serveur mais à un indice dans la liste de noeuds. On voit bien que la même clé avant et après le départ d'un serveur a toutes les chances de ne pas se retrouver au même endroit.
 
 
 ### Un petit essai
