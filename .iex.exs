@@ -2,6 +2,14 @@ defmodule Master do
   def stat(i) do
     :rpc.call(:"apothik_#{i}@127.0.0.1", Apothik.Cache, :stats, [])
   end
+  def get_tokens(i) do
+    :rpc.call(:"apothik_#{i}@127.0.0.1", Apothik.Cache, :get_tokens, [])
+  end
+  def check_tokens(i) do
+    tk = get_tokens(i)
+     (for [_n,t]<-tk, do: t) |> List.flatten() |> Enum.uniq() |> length
+  end
+
   def get(i, k) do
     :rpc.call(:"apothik_#{i}@127.0.0.1", Apothik.Cache, :get, [k])
   end

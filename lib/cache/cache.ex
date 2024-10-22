@@ -27,6 +27,10 @@ defmodule Apothik.Cache do
     GenServer.call(__MODULE__, {:update_nodes, nodes})
   end
 
+  def get_tokens() do
+    :ets.match(:cluster_nodes_list, {:"$1", :"$2"})
+  end
+
   def start_link(args), do: GenServer.start_link(__MODULE__, args, name: __MODULE__)
 
   # Implementation
@@ -34,7 +38,6 @@ defmodule Apothik.Cache do
   defp key_to_node(k) do
     landing_token = :erlang.phash2(k, @nb_tokens)
     nodes_tokens = :ets.match(:cluster_nodes_list, {:"$1", :"$2"})
-    IO.inspect(landing_token)
 
     Enum.reduce_while(nodes_tokens, nil, fn [node, tokens], _ ->
       if landing_token in tokens, do: {:halt, node}, else: {:cont, nil}
@@ -47,7 +50,7 @@ defmodule Apothik.Cache do
     {_, nodes} = Cluster.get_state()
 
     nodes
-    |> Enum.zip(Enum.chunk_every(1..@nb_tokens, div(@nb_tokens, length(nodes))))
+    |> Enum.zip(Enum.chunk_every(0..(@nb_tokens - 1), div(@nb_tokens, length(nodes))))
     |> Enum.each(fn {node, tokens} ->
       :ets.insert(:cluster_nodes_list, {node, tokens})
     end)
@@ -73,8 +76,46 @@ defmodule Apothik.Cache do
   end
 
   def handle_call({:update_nodes, nodes}, _from, state) do
-    Logger.info("Updating nodes: #{inspect(nodes)}")
-    :ets.insert(:cluster_nodes_list, {:cluster_nodes, nodes})
+    previous_nodes_tokens = :ets.match(:cluster_nodes_list, {:"$1", :"$2"})
+    previous_nodes = for [node, _] <- previous_nodes_tokens, do: node
+
+    added = MapSet.difference(MapSet.new(nodes), MapSet.new(previous_nodes)) |> MapSet.to_list()
+    removed = MapSet.difference(MapSet.new(previous_nodes), MapSet.new(nodes)) |> MapSet.to_list()
+
+    if length(added) == 1 do
+      added_node = hd(added)
+      target_tokens_per_node = div(@nb_tokens, length(previous_nodes) + 1)
+
+      {tokens_for_added_node, tolled_nodes_tokens} =
+        Enum.reduce(previous_nodes_tokens, {[], []}, fn [node, tokens],
+                                                        {tolls, target_nodes_tokens} ->
+          {remainder, toll} = Enum.split(tokens, target_tokens_per_node)
+          {tolls ++ toll, [{node, remainder} | target_nodes_tokens]}
+        end)
+
+      Enum.each([{added_node, tokens_for_added_node} | tolled_nodes_tokens], fn {node, tokens} ->
+        :ets.insert(:cluster_nodes_list, {node, tokens})
+      end)
+    end
+
+    if length(removed) == 1 do
+      removed_node = hd(removed)
+
+      {[[_, tokens_to_share]], remaining_nodes} =
+        Enum.split_with(previous_nodes_tokens, fn [node, _] -> node == removed_node end)
+
+      size_of_chunks = max(div(length(tokens_to_share), length(remaining_nodes)), 1)
+
+      tokens_to_share
+      |> Enum.chunk_every(size_of_chunks)
+      |> Enum.zip(remaining_nodes)
+      |> Enum.each(fn {tokens_chunk, [node, previous_tokens]} ->
+        :ets.insert(:cluster_nodes_list, {node, previous_tokens ++ tokens_chunk})
+      end)
+
+      :ets.delete(:cluster_nodes_list, removed_node)
+    end
+
     {:reply, :ok, state}
   end
 
