@@ -3,6 +3,8 @@ defmodule Apothik.Cache do
   alias Apothik.Cluster
   require Logger
 
+  @nb_tokens 1000
+
   # Interface
   def get(k) do
     node = key_to_node(k)
@@ -30,14 +32,26 @@ defmodule Apothik.Cache do
   # Implementation
 
   defp key_to_node(k) do
-    [{_, nodes}] = :ets.lookup(:cluster_nodes_list, :cluster_nodes)
-    Enum.at(nodes, :erlang.phash2(k, length(nodes)))
+    landing_token = :erlang.phash2(k, @nb_tokens)
+    nodes_tokens = :ets.match(:cluster_nodes_list, {:"$1", :"$2"})
+    IO.inspect(landing_token)
+
+    Enum.reduce_while(nodes_tokens, nil, fn [node, tokens], _ ->
+      if landing_token in tokens, do: {:halt, node}, else: {:cont, nil}
+    end)
   end
 
   @impl true
   def init(_args) do
     :ets.new(:cluster_nodes_list, [:named_table, :set, :protected])
-    :ets.insert(:cluster_nodes_list, {:cluster_nodes, Cluster.get_state()})
+    {_, nodes} = Cluster.get_state()
+
+    nodes
+    |> Enum.zip(Enum.chunk_every(1..@nb_tokens, div(@nb_tokens, length(nodes))))
+    |> Enum.each(fn {node, tokens} ->
+      :ets.insert(:cluster_nodes_list, {node, tokens})
+    end)
+
     {:ok, %{}}
   end
 
