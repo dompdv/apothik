@@ -25,6 +25,10 @@ defmodule Master do
   def stat() do
     Enum.map(1..5, fn i -> {i,stat(i)} end)
   end
+  def sum() do
+    (for {_,s} <- stat(), is_integer(s), do: s) |> Enum.sum()
+  end
+
   def kill(i) do
     :rpc.call(:"apothik_#{i}@127.0.0.1", System, :stop, [0])
   end
