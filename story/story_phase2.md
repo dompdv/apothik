@@ -287,7 +287,7 @@ defmodule Apothik.Cache do
   alias Apothik.Cluster
   require Logger
 
-  (...)
+  (... same as before ...)
 
   def update_nodes(nodes) do
     GenServer.call(__MODULE__, {:update_nodes, nodes})
@@ -342,8 +342,8 @@ end
 
 Notez, dans `init/1`:
 ```elixir 
-  :ets.new(:cluster_nodes_list, [:named_table, :set, :protected])
-  :ets.insert(:cluster_nodes_list, {:cluster_nodes, Cluster.get_state()})
+:ets.new(:cluster_nodes_list, [:named_table, :set, :protected])
+:ets.insert(:cluster_nodes_list, {:cluster_nodes, Cluster.get_state()})
 ```
 Nous utilisons une table nommée `:cluster_nodes_list`, dans laquelle seul le process créateur peut écrire mais qui est accessible par tous les processus du noeud. C'est le sens de l'option `:protected`. Dans cette table, qui se comporte comme une `map`, nous avons une seule clé `:cluster_nodes_list` qui contient la liste des noeuds du cluster. 
 
@@ -355,7 +355,7 @@ defp key_to_node(k) do
 end
 ```
 
-On vous laisse vérifier que tout marche bien. Fin de l'interlude!
+On vous laisse vérifier que tout marche bien. Fin de l'interlude !
 
 ### Critique du fonctionnement actuel et solution possible
 
@@ -369,9 +369,9 @@ L'idée est de se donner des jetons ("tokens") (pour fixer les idées, prenons 1
 
 Première remarque, `Apothik.Cluster` ne change pas. Sa responsabilité est de suivre l'état du cluster et de prévenir `Apothik.Cache`. Point final.
 
-A l'initialisation du cache, nous distribuons les `@nb_tokens` sur le machines. Avec 5 machines et 1000 tokens, `apothik_1` va recevoir les tokens de 0 à 199, etc. Les jetons sont stockés dans la table `:ets` en associant le nom du noeud à sa liste de jetons avec un `:ets.insert(:cluster_nodes_list, {node, tokens})`.
+A l'initialisation du cache, nous distribuons équitablement les `@nb_tokens` sur les machines. Avec 5 machines et 1000 tokens, `apothik_1` va recevoir les tokens de 0 à 199, etc. Les jetons sont stockés dans la table `:ets` en associant le nom du noeud à sa liste de jetons avec un `:ets.insert(:cluster_nodes_list, {node, tokens})`.
 
-Le premier point important est `key_to_node/1`:
+Le premier point important est `key_to_node/1`. On trouve d'abord le token associé à la clé. Puis on parcourt les noeuds jusqu'à trouver celui auquel est associé le token. Voici ce que cela donne:
 ```elixir
   defp key_to_node(k) do
     landing_token = :erlang.phash2(k, @nb_tokens)
@@ -382,13 +382,12 @@ Le premier point important est `key_to_node/1`:
     end)
   end
 ```
-On trouve d'abord le token associé à la clé. Puis on parcourt les noeuds jusqu'à trouver celui auquel est associé le token.
 
-Le deuxième point est la gestion des événements d'arrivée et sortie. La première étape est de déterminer si le type d'événement. Cela se fait dans `def handle_call({:update_nodes, nodes}, _from, state)` en comparant la nouvelle liste de noeud fournie à celle présente dans la table `ets`.
+Le deuxième point est la gestion des événements d'arrivée et sortie. La première étape est de déterminer quel type d'événement (arrivée ou départ). Cela se fait dans `def handle_call({:update_nodes, nodes}, _from, state)` en comparant la nouvelle liste de noeud fournie à celle présente dans la table `ets`.
 
-Quand un noeud est supprimé du cluster, ses tokens sont distribués de façon la plus égale possible sur les autres noeuds. Quand un noeud est ajouté dans le cluster, on retire le même nombre de tokens de chaque noeud, au hasard, pour l'apporter au nouveau. Le nombre de token retiré est calculé pour que le nombre de tokens soit distribué de façon égale après la redistribution.
+Quand un noeud est supprimé du cluster, ses tokens sont distribués de façon la plus égale possible sur les autres noeuds. Quand un noeud est ajouté dans le cluster, on retire le même nombre de tokens de chaque noeud pour l'apporter au nouveau. Le nombre de token retiré est calculé pour que le nombre de tokens soit distribué de façon égale après la redistribution.
 
-Voici ce que cela donne (le code n'est pas très élégant, il mériterait probablement une passe de nettoyage):
+Voici ce que cela donne (le code, un peu commenté néammoins, n'est pas très élégant, il mériterait probablement une passe de nettoyage):
 ```elixir
 defmodule Apothik.Cache do
   use GenServer
@@ -397,11 +396,10 @@ defmodule Apothik.Cache do
 
   @nb_tokens 1000
 
-  (...)
+  (... same as before ...)
 
-  def get_tokens() do
-    :ets.match(:cluster_nodes_list, {:"$1", :"$2"})
-  end
+  # Convenience function to access the current token distribution on the nodes
+  def get_tokens(), do: :ets.match(:cluster_nodes_list, {:"$1", :"$2"})
 
   def start_link(args), do: GenServer.start_link(__MODULE__, args, name: __MODULE__)
 
@@ -484,7 +482,7 @@ defmodule Apothik.Cache do
   def handle_call({:update_nodes, nodes}, _from, state) do
     previous_nodes_tokens = :ets.match(:cluster_nodes_list, {:"$1", :"$2"})
     previous_nodes = for [node, _] <- previous_nodes_tokens, do: node
-
+    # Is it a nodedown or a nodeup event ? and identify the added or removed node
     added = MapSet.difference(MapSet.new(nodes), MapSet.new(previous_nodes)) |> MapSet.to_list()
     removed = MapSet.difference(MapSet.new(previous_nodes), MapSet.new(nodes)) |> MapSet.to_list()
 
@@ -565,14 +563,26 @@ iex(master@127.0.0.1)7> Master.check_tokens(1)
 
 Dans un autre terminal, on relance `apothik_2`: `% elixir --name apothik_2@127.0.0.1 -S mix run --no-halt`. En revenant dans master:
 ```
-8> Master.stat
-[  {1, 1016},  {2, 971},  {3, 970},  {4, 985},  {5, 1058}]
+iex(master@127.0.0.1)8> Master.stat
+[  {1, 1265},  {2, 0},  {3, 1238},  {4, 1224},  {5, 1273} ]
+iex(master@127.0.0.1)9> Master.fill(1,5000)
+:ok
+iex(master@127.0.0.1)10> Master.stat
+[  {1, 1265},  {2, 971},  {3, 1238},  {4, 1224},  {5, 1273}]
+iex(master@127.0.0.1)11> Master.check_tokens(1)
+1000
+iex(master@127.0.0.1)12> for [_n,t]<-Master.get_tokens(1), do: length(t)
+[200, 200, 200, 200, 200]
 ```
 
-Ca marche! Les clés sont bien réparties sur les noeuds. Et on n'a pas perdu de token ! 
+On n'a pas perdu de token au passage, et ils sont bien répartis équitablement après le retour de `apothik_2`.
 
-Nous avons conçu notre système de redistribution de token sans trop y réfléchir. Nous nous doutons bien qu'il doit y avoir une approche optimale. 
+Que se passe-t-il dans les mémoires des serveurs? Les clés de `apothik_2` on bien été perdues quand il est mort. Quand on recharge alors le système avec les mêmes clés, on répartit environ 1000 clés sur les autres. Après son retour et un rechargement, on se retrouve avec un surplus de 265+238+224+273=1000 clés. Ce qui est cohérent. 
+
+Une remarque: nous avons conçu notre système de redistribution de token sans trop y réfléchir. Nous soupçonnons d'abord qu'il pourrait dériver (c'est à dire que l'on pourrait s'éloigner d'une répartition équitable. En tout cas, cela reste à terster). Mais surtout, nous nous doutons bien qu'il doit y avoir une approche optimale de distribution des tokens pour garantir un minimum de changements.
 
 C'est typiquement le moment où l'on se dit : "Je découvre un domaine et je bute sur une question bien compliquée. Des gens plus intelligents ont déjà réfléchi au problème et mis cela dans une librairie". Nous n'avons pas touvé la réponse, mais au moins, nous comprenons un peu la question !
 
-Fin de la phase 1 !
+###  Petit récapitulatif de la phase 2:
+
+Nous avons un système distribué qui réagit automatiquement aux arrivées et départs de noeuds dans le cluster. Nous avons aussi amélioré la solution initiale pour le rendre moins sensible aux changements du cluster (arrivée et départs de noeuds). Au passage, notre solution n'est plus sensible au nom du noeud (tout noeud dont le nom commence par `apothik` peut rejoindre le cluster).
