@@ -413,27 +413,7 @@ defmodule Apothik.Cache do
 
   @nb_tokens 1000
 
-  # Interface
-  def get(k) do
-    node = key_to_node(k)
-    GenServer.call({__MODULE__, node}, {:get, k})
-  end
-
-  def put(k, v) do
-    node = key_to_node(k)
-    GenServer.call({__MODULE__, node}, {:put, k, v})
-  end
-
-  def delete(k) do
-    node = key_to_node(k)
-    GenServer.call({__MODULE__, node}, {:delete, k})
-  end
-
-  def stats(), do: GenServer.call(__MODULE__, :stats)
-
-  def update_nodes(nodes) do
-    GenServer.call(__MODULE__, {:update_nodes, nodes})
-  end
+  (...)
 
   def get_tokens() do
     :ets.match(:cluster_nodes_list, {:"$1", :"$2"})
@@ -515,23 +495,7 @@ defmodule Apothik.Cache do
 
     {:ok, %{}}
   end
-
-  @impl true
-  def handle_call({:get, k}, _from, state) do
-    {:reply, Map.get(state, k), state}
-  end
-
-  def handle_call({:put, k, v}, _from, state) do
-    {:reply, :ok, Map.put(state, k, v)}
-  end
-
-  def handle_call({:delete, k}, _from, state) do
-    {:reply, :ok, Map.delete(state, k)}
-  end
-
-  def handle_call(:stats, _from, state) do
-    {:reply, map_size(state), state}
-  end
+(...)
 
   def handle_call({:update_nodes, nodes}, _from, state) do
     previous_nodes_tokens = :ets.match(:cluster_nodes_list, {:"$1", :"$2"})
@@ -549,11 +513,7 @@ defmodule Apothik.Cache do
     {:reply, :ok, state}
   end
 
-  @impl true
-  def handle_info(msg, state) do
-    Logger.warning(msg)
-    {:noreply, state}
-  end
+  (...)
 
   # Utility function
   # Split a list into chunks of same length
@@ -570,3 +530,62 @@ end
 ```
 
 (notez que le `split_evenly/2` a été ajouté car probablement mauvais usage de `Enum.chunk_every/3` nous faisait perdre des tokens. Parfois, il est plus facile de coder sa solution).
+
+On ajoute dans `.iex.exs`de quoi vérifier comment bougent les tokens:
+```elixir 
+  def get_tokens(i) do
+    :rpc.call(:"apothik_#{i}@127.0.0.1", Apothik.Cache, :get_tokens, [])
+  end
+  def check_tokens(i) do
+    tk = get_tokens(i)
+     (for [_n,t]<-tk, do: t) |> List.flatten() |> Enum.uniq() |> length
+  end
+```
+
+Momentanément, on change le nombre de tokens `@nb_tokens 10`.
+```
+% ./scripts/start_master.sh
+iex(master@127.0.0.1)1> Master.get_tokens(1)
+[
+  [:"apothik_5@127.0.0.1", ~c"\b\t"],
+  [:"apothik_4@127.0.0.1", [6, 7]],
+  [:"apothik_3@127.0.0.1", [4, 5]],
+  [:"apothik_2@127.0.0.1", [2, 3]],
+  [:"apothik_1@127.0.0.1", [0, 1]]
+]
+```
+
+On remet `@nb_tokens 1000` et on relance tout:
+```
+% ./scripts/start_master.sh
+iex(master@127.0.0.1)1> Master.check_tokens(1)
+1000
+```
+Ca marche, maintenant que se passe-t-il si on enlève un noeud ?
+iex(master@127.0.0.1)2> Master.fill(1,5000)
+:ok
+iex(master@127.0.0.1)3> Master.stat
+[  {1, 1016},  {2, 971},  {3, 970},  {4, 985},  {5, 1058}]
+iex(master@127.0.0.1)4> Master.kill(2)
+:ok
+iex(master@127.0.0.1)5> Master.fill(1,5000)
+:ok
+iex(master@127.0.0.1)6> Master.stat
+[  {1, 1265},  {2, {:badrpc, :nodedown}},  {3, 1238},  {4, 1224},  {5, 1273} ]
+iex(master@127.0.0.1)7> Master.check_tokens(1)
+1000
+```
+
+Dans un autre terminal, on relance `apothik_2`: `% elixir --name apothik_2@127.0.0.1 -S mix run --no-halt`. En revenant dans master:
+```
+8> Master.stat
+[  {1, 1016},  {2, 971},  {3, 970},  {4, 985},  {5, 1058}]
+```
+
+Ca marche! Les clés sont bien réparties sur les noeuds. Et on n'a pas perdu de token ! 
+
+Nous avons conçu notre système de redistribution de token sans trop y réfléchir. Nous nous doutons bien qu'il doit y avoir une approche optimale. 
+
+C'est typiquement le moment où l'on se dit : "Je découvre un domaine et je bute sur une question bien compliquée. Des gens plus intelligents ont déjà réfléchi au problème et mis cela dans une librairie". Nous n'avons pas touvé la réponse, mais au moins, nous comprenons un peu la question !
+
+Fin de la phase 1 !
