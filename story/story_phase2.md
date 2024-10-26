@@ -583,6 +583,8 @@ Une remarque: nous avons conçu notre système de redistribution de token sans t
 
 C'est typiquement le moment où l'on se dit : "Je découvre un domaine et je bute sur une question bien compliquée. Des gens plus intelligents ont déjà réfléchi au problème et mis cela dans une librairie". Nous n'avons pas touvé la réponse, mais au moins, nous comprenons un peu la question !
 
+Nous vous recommandons d'aller voir [libring](https://github.com/bitwalker/libring) ou bien [ex_hash_ring](https://hex.pm/packages/ex_hash_ring) de Discord.
+
 ###  Petit récapitulatif de la phase 2:
 
 Nous avons un système distribué qui réagit automatiquement aux arrivées et départs de noeuds dans le cluster. Nous avons aussi amélioré la solution initiale pour le rendre moins sensible aux changements du cluster (arrivée et départs de noeuds). Au passage, notre solution n'est plus sensible au nom du noeud (tout noeud dont le nom commence par `apothik` peut rejoindre le cluster).
