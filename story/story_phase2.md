@@ -242,5 +242,40 @@ Après avoir rempli le cache avec 5000 valeurs, on supprime le noeud 2. On a bie
 
 ### Deuxième essai: ajouter une machine
 
-Maintenant, nous pouvons faire l'expérience inverse, c'est à dire ajouter une machine.
+Maintenant, nous pouvons faire l'expérience inverse, c'est à dire ajouter une machine. On repart de 0, en relançant le cluster dans un terminal `./scripts/start_cluster.sh` et, dans un autre terminal:
+``` 
+% ./scripts/start_master.sh 
+iex(master@127.0.0.1)1> Master.kill(2)
+:ok
+iex(master@127.0.0.1)2> Master.fill(1,5000)
+:ok
+iex(master@127.0.0.1)3> Master.stat
+[{1, 1228}, {2, {:badrpc, :nodedown}}, {3, 1290}, {4, 1228}, {5, 1254}]
+```
 
+On a rempli le cache sur un cluster à 4 noeuds. Maintenant, on ouvre encore un autre terminal pour relancer le noeud `apothik_2` que l'on vient d'arrêter: `elixir --name apothik_2@127.0.0.1 -S mix run --no-halt`
+
+On revient dans le terminal du master:
+```
+4> Master.stat
+[  {1, 1228},  {2, 0},  {3, 1290},  {4, 1228},  {5, 1254}]
+iex(master@127.0.0.1)5> Master.fill(1,5000)
+:ok
+iex(master@127.0.0.1)6> Master.stat
+[  {1, 2032},  {2, 996},  {3, 2027},  {4, 2027},  {5, 1970}]
+```
+C'est positif: le noeud a bien été réintégré au cluster automatiquement! Le but est donc atteint.
+
+On constate bien un rebalancement aléatoire des clés sur les 5 noeuds, ce qui conduit les noeuds à garder en mémoire des clés inutiles (environ 1000).
+
+On vous laisse essayer d'ajouter une nouvelle machine `apothik_6` et observer ce qui se passe.
+
+### Interlude: nettoyer un peu
+
+Nous sommes allés au plus vite quand nous avons ajouté le suivi des noeuds qui entrent et sortent du cluster. Souvenez-vous, `Apothik.Cluster` qui suit les entrées et sorties de noeuds dans le cluster informe `Apothik.Cache` à chaque changement. Celui-ci est un `GenServer` qui conserve l'état du cluster dans son état.
+
+Mais cela conduit à quelque chose de très laid: à chaque fois que l'on fait une demande au cache, on fait une demande au process `Apothik.Cache` pour qu'il calcule le noeud pour la clé via un `GenServer.call`.
+
+Précisément, lorsque l'on lance `:rpc.call(:"apothik_1@127.0.0.1", Apothik.Cache, :get, [:a_key])` du master, un process est lancé sur `apothik_1` pour exécuter le code `Apothik.Cache.get/1`. Ce process demande alors au process nommé `Apothik.Cache` sur le noeud `apothik_1` sur quel noeud est stocké la clé `:a_key` (supposons par exemple le noeud `2`) puis demande au process `Apothik.Cache` du noeud `apothik_2` la valeur stockée pour `a_key`. Cette valeur est alors envoyée au process appelant du master qui exécute le `:rpc`. C'est assez vertigineux que tout cela fonctionne sans effort. La magie d'Erlang, une fois de plus.
+
+Mais cet aller-retour initial de `key_to_node/1` peut être évité. Il faudrait que l'on puisse stocker des informations accessibles par tous les process du noeud. La solution existe depuis longtemps dans l'univers Erlang. C'est le fameux [Erlang Term Storage, dit `ets`](https://www.erlang.org/docs/23/man/ets). 
