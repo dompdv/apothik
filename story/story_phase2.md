@@ -204,7 +204,7 @@ Commentons un peu plus en détail
 Ce nombre ne correspond plus directement à un nom de serveur mais à un indice dans la liste de noeuds. On voit bien que la même clé avant et après le départ d'un serveur a toutes les chances de ne pas se retrouver au même endroit.
 
 
-### Un petit essai
+### Un petit essai: enlever une machine
 
 Pour se simplifier la vie, on ajoute dans `.iex.exs`
 ```elixir
@@ -238,6 +238,9 @@ iex(master@127.0.0.1)8> (for {_, n} <- Master.stat, is_integer(n), do: n) |> Enu
 8056
 ```
 
-Après avoir rempli le cache avec 5000 valeurs, on supprime le noeud 2. On a bien perdu environ 1000 valeurs (996 pour être précis). On reremplit le cache avec les mêmes 5000 valeurs. On voit alors qu'il n'y a pas 5000 valeurs en plus. En effet, certaines clés étaient au bon endroit. Il y a eu création de 8056-4004=4052 d'entrées dans la mémoire du cache, ce qui signifie que 5000-4052= 948 valeurs n'ont pas migré de noeud.
+Après avoir rempli le cache avec 5000 valeurs, on supprime le noeud 2. On a bien perdu environ 1000 valeurs (996 pour être précis). On reremplit le cache avec les mêmes 5000 valeurs. On voit alors qu'il n'y a pas 5000 valeurs en plus. En effet, certaines clés étaient au bon endroit. Il y a eu création de 8056-4004=4052 d'entrées dans la mémoire du cache, ce qui signifie que 5000-4052= 948 valeurs n'ont pas migré de noeud. C'est un peu normal, car lorsqu'on est passé de 5 à 4 machines, les clés se sont retrouvées rebalancées de façon aléatoire. Il y avait donc une probabilité de 20% (ou de 25%, je laisse les commentateurs nous dire) que des clés soient au bon endroit.
 
+### Deuxième essai: ajouter une machine
+
+Maintenant, nous pouvons faire l'expérience inverse, c'est à dire ajouter une machine.
 
