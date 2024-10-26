@@ -287,23 +287,7 @@ defmodule Apothik.Cache do
   alias Apothik.Cluster
   require Logger
 
-  # Interface
-  def get(k) do
-    node = key_to_node(k)
-    GenServer.call({__MODULE__, node}, {:get, k})
-  end
-
-  def put(k, v) do
-    node = key_to_node(k)
-    GenServer.call({__MODULE__, node}, {:put, k, v})
-  end
-
-  def delete(k) do
-    node = key_to_node(k)
-    GenServer.call({__MODULE__, node}, {:delete, k})
-  end
-
-  def stats(), do: GenServer.call(__MODULE__, :stats)
+  (...)
 
   def update_nodes(nodes) do
     GenServer.call(__MODULE__, {:update_nodes, nodes})
