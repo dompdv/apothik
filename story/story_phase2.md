@@ -279,3 +279,108 @@ Mais cela conduit à quelque chose de très laid: à chaque fois que l'on fait u
 Précisément, lorsque l'on lance `:rpc.call(:"apothik_1@127.0.0.1", Apothik.Cache, :get, [:a_key])` du master, un process est lancé sur `apothik_1` pour exécuter le code `Apothik.Cache.get/1`. Ce process demande alors au process nommé `Apothik.Cache` sur le noeud `apothik_1` sur quel noeud est stocké la clé `:a_key` (supposons par exemple le noeud `2`) puis demande au process `Apothik.Cache` du noeud `apothik_2` la valeur stockée pour `a_key`. Cette valeur est alors envoyée au process appelant du master qui exécute le `:rpc`. C'est assez vertigineux que tout cela fonctionne sans effort. La magie d'Erlang, une fois de plus.
 
 Mais cet aller-retour initial de `key_to_node/1` peut être évité. Il faudrait que l'on puisse stocker des informations accessibles par tous les process du noeud. La solution existe depuis longtemps dans l'univers Erlang. C'est le fameux [Erlang Term Storage, dit `ets`](https://www.erlang.org/docs/23/man/ets). 
+
+Après adaptation, le cache ressemble à ça:
+```elixir
+defmodule Apothik.Cache do
+  use GenServer
+  alias Apothik.Cluster
+  require Logger
+
+  # Interface
+  def get(k) do
+    node = key_to_node(k)
+    GenServer.call({__MODULE__, node}, {:get, k})
+  end
+
+  def put(k, v) do
+    node = key_to_node(k)
+    GenServer.call({__MODULE__, node}, {:put, k, v})
+  end
+
+  def delete(k) do
+    node = key_to_node(k)
+    GenServer.call({__MODULE__, node}, {:delete, k})
+  end
+
+  def stats(), do: GenServer.call(__MODULE__, :stats)
+
+  def update_nodes(nodes) do
+    GenServer.call(__MODULE__, {:update_nodes, nodes})
+  end
+
+  def start_link(args), do: GenServer.start_link(__MODULE__, args, name: __MODULE__)
+
+  # Implementation
+
+  defp key_to_node(k) do
+    [{_, nodes}] = :ets.lookup(:cluster_nodes_list, :cluster_nodes)
+    Enum.at(nodes, :erlang.phash2(k, length(nodes)))
+  end
+
+  @impl true
+  def init(_args) do
+    :ets.new(:cluster_nodes_list, [:named_table, :set, :protected])
+    :ets.insert(:cluster_nodes_list, {:cluster_nodes, Cluster.get_state()})
+    {:ok, %{}}
+  end
+
+  @impl true
+  def handle_call({:get, k}, _from, state) do
+    {:reply, Map.get(state, k), state}
+  end
+
+  def handle_call({:put, k, v}, _from, state) do
+    {:reply, :ok, Map.put(state, k, v)}
+  end
+
+  def handle_call({:delete, k}, _from, state) do
+    {:reply, :ok, Map.delete(state, k)}
+  end
+
+  def handle_call(:stats, _from, state) do
+    {:reply, map_size(state), state}
+  end
+
+  def handle_call({:update_nodes, nodes}, _from, state) do
+    Logger.info("Updating nodes: #{inspect(nodes)}")
+    :ets.insert(:cluster_nodes_list, {:cluster_nodes, nodes})
+    {:reply, :ok, state}
+  end
+
+  @impl true
+  def handle_info(msg, state) do
+    Logger.warning(msg)
+    {:noreply, state}
+  end
+end
+```
+
+Notez, dans `init/1`:
+```elixir 
+  :ets.new(:cluster_nodes_list, [:named_table, :set, :protected])
+  :ets.insert(:cluster_nodes_list, {:cluster_nodes, Cluster.get_state()})
+```
+Nous utilisons une table nommée `:cluster_nodes_list`, dans laquelle seul le process créateur peut écrire mais qui est accessible par tous les processus du noeud. C'est le sens de l'option `:protected`. Dans cette table, qui se comporte comme une `map`, nous avons une seule clé `:cluster_nodes_list` qui contient la liste des noeuds du cluster. 
+
+Nous sommes arrivés à notre but, car `key_to_node/1` peut s'exécuter directement:
+```elixir
+defp key_to_node(k) do
+    [{_, nodes}] = :ets.lookup(:cluster_nodes_list, :cluster_nodes)
+    Enum.at(nodes, :erlang.phash2(k, length(nodes)))
+end
+```
+
+On vous laisse vérifier que tout marche bien. Fin de l'interlude!
+
+### Critique du fonctionnement actuel et solution possible
+
+Quelque chose ne nous plait pas. L'arrivée ou la sortie d'un noeud dans le cluster est un cataclysme. Toutes les clés sont rebalancées. Cela conduit à un cache qui va subitement baisser en performance à chaque fois qu'un tel événement survient, car les clés ne seront plus disponibles. Et à avoir des mémoires pleines de clés inutiles. Finalement, un événement qui devrait être local, voire insignifiant dans le cas d'un très grand cluster, chamboule la totalité du cluster. Comment rendre la distribution des clés  moins sensible à la structure du cluster ?
+
+Après discussion entre nous et quelques pages de bloc-notes, une solution se forme. Comment souvent en informatique, la solution est d'ajouter un niveau d'indirection.
+
+L'idée est de se donner des jetons ("tokens") (pour fixer les idées, prenons 1000 tokens, numérotés de 0 à 999). Nous allons distribuer les clés sur les tokens et non les machines, avec quelque chose comme `:erlang.phash2(k, @nb_tokens)`. Ce nombre de tokens est fixe. Il n'y a pas création ou suppression de tokens à l'arrivée ou à l'ajout d'un serveur dans le cluster. Les tokens sont distribués sur les machines. L'arrivée ou le départ d'une machine va conduire à une redistribution de tokens. Mais nous contrôlons cette redistribution, donc nous pouvons faire qu'elle affecte de façon minimale le rebalancement des clés.
+
+
+
+
