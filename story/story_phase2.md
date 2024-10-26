@@ -561,7 +561,10 @@ On remet `@nb_tokens 1000` et on relance tout:
 iex(master@127.0.0.1)1> Master.check_tokens(1)
 1000
 ```
+
 Ca marche, maintenant que se passe-t-il si on enlève un noeud ?
+
+```
 iex(master@127.0.0.1)2> Master.fill(1,5000)
 :ok
 iex(master@127.0.0.1)3> Master.stat
