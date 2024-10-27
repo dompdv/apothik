@@ -579,11 +579,52 @@ On n'a pas perdu de token au passage, et ils sont bien répartis équitablement 
 
 Que se passe-t-il dans les mémoires des serveurs? Les clés de `apothik_2` on bien été perdues quand il est mort. Quand on recharge alors le système avec les mêmes clés, on répartit environ 1000 clés sur les autres. Après son retour et un rechargement, on se retrouve avec un surplus de 265+238+224+273=1000 clés. Ce qui est cohérent. 
 
+### Irruption du "Hash ring" 
+
 Une remarque: nous avons conçu notre système de redistribution de token sans trop y réfléchir. Nous soupçonnons d'abord qu'il pourrait dériver (c'est à dire que l'on pourrait s'éloigner d'une répartition équitable. En tout cas, cela reste à terster). Mais surtout, nous nous doutons bien qu'il doit y avoir une approche optimale de distribution des tokens pour garantir un minimum de changements.
 
 C'est typiquement le moment où l'on se dit : "Je découvre un domaine et je bute sur une question bien compliquée. Des gens plus intelligents ont déjà réfléchi au problème et mis cela dans une librairie". Nous n'avons pas touvé la réponse, mais au moins, nous comprenons un peu la question !
 
-Nous vous recommandons d'aller voir [libring](https://github.com/bitwalker/libring) ou bien [ex_hash_ring](https://hex.pm/packages/ex_hash_ring) de Discord.
+Et bien sûr, la réponse existe.  Nous vous recommandons d'aller voir [libring](https://github.com/bitwalker/libring) ou bien [ex_hash_ring](https://hex.pm/packages/ex_hash_ring) de Discord.
+Elle s'appelle le "Hash ring". L'idée est de s'imaginer que les jetons (numérotés de 0 à 999) sont situés sur un cercle. Chaque noeud va s'occuper d'un arc de cercle de valeurs contigües. C'est d'ailleurs ce que nous avons fait au début, avec `apothik_1` qui s'occupait de l'arc `0..199`, etc. Il suffit de se souvenir d'un seul nombre de référence par noeud, par exemple la borne supérieure de l'arc. Ici, ce serait `199`. `apothik_5` serait à `0` car on raisonne modulo 1000. D'où l'idée du cercle. Pour savoir le noeud qui s'occupe du jeton `n` il suffit de trouver le noeud dont la valeur de référence est la première supérieure à `n`. 
+
+On peut se demander comment s'assurer d'une bonne répartition des noeuds, c'est à dire qu'ils aient des arcs de cercle de taille comparables. La première idée est d'utiliser la même fonction de hachage, sur le nom du noeud. Mais il y a d'autres raffinements, y compris pour assurer que les arcs de cercles aient des tailles inégales, mais de façon pilotée et voulue.
+
+Quand un noeud arrive dans le cluster, on le positionne donc quelque part sur le cercle et il va se partager le travail avec le noeud en charge de l'arc sur lequel il arrive. Si le noeud revient d'entre les morts avec le même nom et que sa position est déterministe par rapport à son nom, il va reprendre la même place, ce qui est optimal.
+
+Enlevons toutes nos élucubrations de tokens et utilisons `libring` (ajouter `{:libring, "~> 1.7"}` dans les dépendances)
+
+Voici ce que cela donne:
+```elixir
+defmodule Apothik.Cache do
+
+(...remove everything related to tokens and update the functions below...)
+
+  defp key_to_node(k) do
+    [{_, ring}] = :ets.lookup(:cluster_nodes_list, :cluster_ring)
+    HashRing.key_to_node(ring, k)
+  end
+
+  def init(_args) do
+    :ets.new(:cluster_nodes_list, [:named_table, :set, :protected])
+    {_, nodes} = Cluster.get_state()
+    :ets.insert(:cluster_nodes_list, {:cluster_ring, HashRing.new() |> HashRing.add_nodes(nodes)})
+    {:ok, %{}}
+  end
+
+  def handle_call({:update_nodes, nodes}, _from, state) do
+    ring = HashRing.new() |> HashRing.add_nodes(nodes)
+    :ets.insert(:cluster_nodes_list, {:cluster_ring, ring})
+
+    {:reply, :ok, state}
+  end
+
+end
+
+```
+
+C'est plus simple, n'est-ce-pas ? Bon, pas sûr que notre idée d'utiliser `ets` soit la bonne. En tout cas, ça marche et ça nous suffit pour l'instant.
+
 
 ###  Petit récapitulatif de la phase 2:
 
