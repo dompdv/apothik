@@ -5,7 +5,7 @@ defmodule Apothik.Application do
 
   @impl true
   def start(_type, _args) do
-    hosts = Apothik.Cluster.node_list(Apothik.Cluster.static_nb_nodes())
+    hosts = Apothik.Cluster.node_list()
 
     topologies = [
       apothik_cluster_1: [

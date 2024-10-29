@@ -3,6 +3,7 @@
 # Number of instances
 NUM_INSTANCES=5
 
+LAST_INSTANCE_NUMBER=$((NUM_INSTANCES - 1))
 # Application name
 APP_NAME="apothik"  # Replace with your application name
 
@@ -23,7 +24,7 @@ start_instance() {
 mix compile
 
 # Start each instance
-for i in $(seq 1 $NUM_INSTANCES); do
+for i in $(seq 0 $LAST_INSTANCE_NUMBER); do
   start_instance $i
 done
 

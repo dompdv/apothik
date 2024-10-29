@@ -24,7 +24,7 @@ defmodule Master do
     Enum.each(1..n, fn j -> put(i, "k_#{i}_#{j}", j) end)
   end
   def stat() do
-    Enum.map(1..@nb_nodes, fn i -> {i,stat(i)} end)
+    Enum.map(0..(@nb_nodes-1), fn i -> {i,stat(i)} end)
   end
   def sum() do
     (for {_,s} <- stat(), is_integer(s), do: s) |> Enum.sum()

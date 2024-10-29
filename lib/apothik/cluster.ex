@@ -3,7 +3,8 @@ defmodule Apothik.Cluster do
   use GenServer
 
   @nb_nodes 5
-  @hosts for i <- 1..@nb_nodes, into: %{}, do: {i, :"apothik_#{i}@127.0.0.1"}
+
+  @hosts for i <- 0..(@nb_nodes - 1), into: %{}, do: {i, :"apothik_#{i}@127.0.0.1"}
 
   def static_nb_nodes(), do: @nb_nodes
 
@@ -15,9 +16,7 @@ defmodule Apothik.Cluster do
     Enum.find(@hosts, fn {_, v} -> v == node end) |> elem(0)
   end
 
-  def node_list(nb_node) do
-    for i <- 1..nb_node, do: node_name(i)
-  end
+  def node_list(), do: Map.values(@hosts)
 
   def list_apothik_nodes() do
     [Node.self() | Node.list()] |> Enum.filter(&apothik?/1) |> Enum.sort()
