@@ -5,16 +5,24 @@ defmodule Apothik.Cache do
 
   # Interface
   def get(k) do
-    node_name = k |> key_to_group() |> first_alive() |> Cluster.node_name()
+    node_name = k |> key_to_group_number() |> alive_node_in_group() |> Cluster.node_name()
     GenServer.call({__MODULE__, node_name}, {:get, k})
   end
 
+  # Put a {key, value} in the cache: save it to all nodes in the group in charge of the key
   def put(k, v) do
-    group = key_to_group(k)
-    node_name = group |> first_alive() |> Cluster.node_name()
-    GenServer.call({__MODULE__, node_name}, {:put, group, k, v})
+    # Map a key to a group number
+    group_number = key_to_group_number(k)
+    # Find the first alive node belonging to the group
+    alive_node = alive_node_in_group(group_number)
+
+    if alive_node == nil,
+      do: :error,
+      else:
+        GenServer.call({__MODULE__, Cluster.node_name(alive_node)}, {:put, group_number, k, v})
   end
 
+  # Save a {key, value} on a node without copying to other nodes of the same group
   def put_replica(replica, group, k, v) do
     node_name = Cluster.node_name(replica)
     GenServer.call({__MODULE__, node_name}, {:put_replica, group, k, v})
@@ -29,43 +37,44 @@ defmodule Apothik.Cache do
   def start_link(args), do: GenServer.start_link(__MODULE__, args, name: __MODULE__)
 
   # Implementation
-  defp node_alive?(node) when is_integer(node) do
-    node_name = Cluster.node_name(node)
+
+  defp node_alive?(node_number) when is_integer(node_number) do
+    node_name = Cluster.node_name(node_number)
     node_name == Node.self() or node_name in Node.list()
   end
 
-  defp node_alive?(node) do
-    node == Node.self() or node in Node.list()
+  defp node_alive?(node_name) do
+    node_name == Node.self() or node_name in Node.list()
   end
 
-  def first_alive(group_number) do
-    case group_number |> get_replicas() |> Enum.filter(&node_alive?/1) do
+  def alive_node_in_group(group_number) do
+    case group_number |> nodes_in_group() |> Enum.filter(&node_alive?/1) do
       [] -> nil
       [a | _] -> a
     end
   end
 
-  defp get_replicas(i) do
+  defp nodes_in_group(group_number) do
     n = Cluster.static_nb_nodes()
-    [i, rem(i - 2 + n, n) + 1, rem(i - 3 + n, n) + 1]
+    [group_number, rem(group_number - 2 + n, n) + 1, rem(group_number - 3 + n, n) + 1]
   end
 
-  defp get_groups(i) do
+  defp groups_of_a_node(node_number) do
     n = Cluster.static_nb_nodes()
-    [i, rem(i, n) + 1, rem(i + 1, n) + 1]
+    [node_number, rem(node_number, n) + 1, rem(node_number + 1, n) + 1]
   end
 
-  defp key_to_group(k) do
+  defp key_to_group_number(k) do
     :erlang.phash2(k, Cluster.static_nb_nodes()) + 1
   end
 
   def hydrate_from_group(me, group) do
     IO.inspect({me, group}, label: "hydrate_from_group")
 
-    first_alive =
-      group |> get_replicas() |> Enum.reject(&(&1 == me)) |> Enum.filter(&node_alive?/1)
+    alive_node_in_group =
+      group |> nodes_in_group() |> Enum.reject(&(&1 == me)) |> Enum.filter(&node_alive?/1)
 
-    case first_alive do
+    case alive_node_in_group do
       [] ->
         %{}
 
@@ -93,7 +102,7 @@ defmodule Apothik.Cache do
     me = Node.self() |> Cluster.number_from_node_name() |> IO.inspect(label: "me")
 
     me
-    |> get_groups()
+    |> groups_of_a_node()
     |> Enum.reduce(
       state,
       fn group, acc -> Map.merge(acc, hydrate_from_group(me, group)) end
@@ -128,7 +137,7 @@ defmodule Apothik.Cache do
 
   def handle_call({:put, group, k, v}, _from, state) do
     group
-    |> get_replicas()
+    |> nodes_in_group()
     |> Enum.reject(fn i -> Cluster.node_name(i) == Node.self() end)
     |> Enum.filter(&node_alive?/1)
     |> Enum.each(fn replica -> :ok = put_replica(replica, group, k, v) end)
