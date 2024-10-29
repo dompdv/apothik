@@ -58,6 +58,9 @@ defmodule Apothik.Cache do
         GenServer.call({__MODULE__, Cluster.node_name(alive_node)}, {:put, group_number, k, v})
   end
 
+  def dump(node, for_group),
+    do: GenServer.call({__MODULE__, Cluster.node_name(node)}, {:dump, for_group})
+
   def stats(), do: GenServer.call(__MODULE__, :stats)
 
   def update_nodes(nodes), do: GenServer.call(__MODULE__, {:update_nodes, nodes})
@@ -87,7 +90,8 @@ defmodule Apothik.Cache do
       node = hd(alive_node_in_group)
 
       try do
-        GenServer.call({__MODULE__, Cluster.node_name(node)}, {:dump, group})
+        %{}
+        #        dump(node, group)
       catch
         _ -> %{}
       end
@@ -119,7 +123,6 @@ defmodule Apothik.Cache do
 
   def handle_call({:dump, group}, _from, state) do
     filtered_on_groups = for {_, {^group, _}} = c <- state, into: %{}, do: c
-    IO.inspect({:dump, group, filtered_on_groups}, label: "dump")
     {:reply, filtered_on_groups, state}
   end
 
