@@ -85,15 +85,20 @@ defmodule Apothik.Cache do
 
   @impl true
   def init(_args) do
+    {:ok, %{}, {:continue, nil}}
+  end
+
+  @impl true
+  def handle_continue(_continue_args, state) do
     me = Node.self() |> Cluster.number_from_node_name() |> IO.inspect(label: "me")
 
     me
     |> get_groups()
     |> Enum.reduce(
-      %{},
+      state,
       fn group, acc -> Map.merge(acc, hydrate_from_group(me, group)) end
     )
-    |> then(&{:ok, &1})
+    |> then(&{:noreply, &1})
   end
 
   @impl true
