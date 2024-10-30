@@ -28,7 +28,7 @@ defmodule Apothik.Cache do
   defp alive?(node_name), do: node_name == Node.self() or node_name in Node.list()
 
   # Retrieve a live node in a group, if any
-  defp alive_node_in_group(group_number) do
+  defp peer(group_number) do
     case group_number |> nodes_in_group() |> Enum.filter(&alive?/1) do
       [] -> nil
       [a | _] -> a
@@ -38,11 +38,8 @@ defmodule Apothik.Cache do
   #### GenServer Interface
   def get(k) do
     # Find a live node and retrieve the value for the key
-    alive_node = k |> key_to_group_number() |> alive_node_in_group()
-
-    if alive_node == nil,
-      do: :error,
-      else: GenServer.call({__MODULE__, Cluster.node_name(alive_node)}, {:get, k})
+    alive_node = k |> key_to_group_number() |> peer()
+    GenServer.call({__MODULE__, Cluster.node_name(alive_node)}, {:get, k})
   end
 
   # Put a {key, value} in the cache
@@ -50,12 +47,8 @@ defmodule Apothik.Cache do
     # Map a key to a group number
     group_number = key_to_group_number(k)
     # Find the first alive node belonging to the group
-    alive_node = alive_node_in_group(group_number)
-
-    if alive_node == nil,
-      do: :error,
-      else:
-        GenServer.call({__MODULE__, Cluster.node_name(alive_node)}, {:put, group_number, k, v})
+    alive_node = peer(group_number)
+    GenServer.call({__MODULE__, Cluster.node_name(alive_node)}, {:put, group_number, k, v})
   end
 
   def dump(node, for_group),
@@ -78,20 +71,15 @@ defmodule Apothik.Cache do
   #### Implementation
 
   def hydrate_from_group(me, group) do
-    IO.inspect({me, group}, label: "hydrate_from_group")
-
     # Find another node in the group which is alive
-    alive_node_in_group =
-      group |> nodes_in_group() |> Enum.reject(&(&1 == me)) |> Enum.filter(&alive?/1)
+    peer = group |> nodes_in_group() |> Enum.reject(&(&1 == me)) |> Enum.filter(&alive?/1)
 
-    if alive_node_in_group == [] do
+    if peer == [] do
       %{}
     else
-      node = hd(alive_node_in_group)
-
       try do
         %{}
-        #        dump(node, group)
+        #        dump(hd(peer), group)
       catch
         _ -> %{}
       end
