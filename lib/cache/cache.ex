@@ -11,25 +11,25 @@ defmodule Apothik.Cache do
     [group_number, rem(group_number - 1 + n, n), rem(group_number - 2 + n, n)]
   end
 
-  # Give the list of nodes belonging to a group
+  # Give the list of groups to which the node belongs
   defp groups_of_a_node(node_number) do
     n = Cluster.static_nb_nodes()
     [node_number, rem(node_number + 1, n), rem(node_number + 2, n)]
   end
 
   # Map a key to a group number
-  defp key_to_group_number(k), do: :erlang.phash2(k, Cluster.static_nb_nodes()) + 1
+  defp key_to_group_number(k), do: :erlang.phash2(k, Cluster.static_nb_nodes())
 
   # Check if a node is alive based on its number
-  defp node_alive?(node_number) when is_integer(node_number),
-    do: node_number |> Cluster.node_name() |> node_alive?()
+  defp alive?(node_number) when is_integer(node_number),
+    do: node_number |> Cluster.node_name() |> alive?()
 
   # Checks if a node is alive based on its name
-  defp node_alive?(node_name), do: node_name == Node.self() or node_name in Node.list()
+  defp alive?(node_name), do: node_name == Node.self() or node_name in Node.list()
 
   # Retrieve a live node in a group, if any
   defp alive_node_in_group(group_number) do
-    case group_number |> nodes_in_group() |> Enum.filter(&node_alive?/1) do
+    case group_number |> nodes_in_group() |> Enum.filter(&alive?/1) do
       [] -> nil
       [a | _] -> a
     end
@@ -82,7 +82,7 @@ defmodule Apothik.Cache do
 
     # Find another node in the group which is alive
     alive_node_in_group =
-      group |> nodes_in_group() |> Enum.reject(&(&1 == me)) |> Enum.filter(&node_alive?/1)
+      group |> nodes_in_group() |> Enum.reject(&(&1 == me)) |> Enum.filter(&alive?/1)
 
     if alive_node_in_group == [] do
       %{}
@@ -143,7 +143,7 @@ defmodule Apothik.Cache do
     group
     |> nodes_in_group()
     |> Enum.reject(fn i -> Cluster.node_name(i) == Node.self() end)
-    |> Enum.filter(&node_alive?/1)
+    |> Enum.filter(&alive?/1)
     |> Enum.each(fn replica -> :ok = put_replica(replica, group, k, v) end)
 
     {:reply, :ok, Map.put(state, k, {group, v})}
