@@ -35,6 +35,22 @@ defmodule Apothik.Cache do
     end
   end
 
+  defp backup_nodes(group_number) do
+    group_number
+    |> nodes_in_group()
+    |> Enum.map(&Cluster.node_name/1)
+    |> Enum.reject(&(&1 == Node.self()))
+  end
+
+  defp request_backups(challenge) do
+    groups = groups_of_a_node(Node.self() |> Cluster.number_from_node_name()) |> dbg
+
+    for g <- groups, p <- backup_nodes(g) do
+      :ok =
+        GenServer.cast({__MODULE__, p}, {:get_backup, g, challenge, self()})
+    end
+  end
+
   #### GenServer Interface
   def get(k) do
     # Find a live node and retrieve the value for the key
@@ -68,40 +84,84 @@ defmodule Apothik.Cache do
     GenServer.call({__MODULE__, node_name}, {:put_replica, group, k, v})
   end
 
+  #### State struc
+  # cache is a map of key -> {group, value}
+  # backup_challenge is a counter to avoid getting responses from the same backup nodes accounting for 2 backup answers
+  # backup_answers is a map of group -> list of values from backup nodes
+  defstruct cache: %{}, backup_challenge: 0, backup_answers: %{}
+
   #### Implementation
-
-  def hydrate_from_group(me, group) do
-    # Find another node in the group which is alive
-    peer = group |> nodes_in_group() |> Enum.reject(&(&1 == me)) |> Enum.filter(&alive?/1)
-
-    if peer == [] do
-      %{}
-    else
-      try do
-        %{}
-        #        dump(hd(peer), group)
-      catch
-        _ -> %{}
-      end
-    end
-  end
 
   @impl true
   def init(_args) do
-    {:ok, %{}, {:continue, nil}}
+    {:ok, %__MODULE__{}, {:continue, nil}}
   end
 
   @impl true
   def handle_continue(_continue_args, state) do
-    me = Node.self() |> Cluster.number_from_node_name()
+    Process.send_after(self(), :new_request, 500)
+    {:noreply, state}
+  end
 
-    me
-    |> groups_of_a_node()
-    |> Enum.reduce(
-      state,
-      fn group, acc -> Map.merge(acc, hydrate_from_group(me, group)) end
-    )
-    |> then(&{:noreply, &1})
+  @impl true
+  def handle_cast({:get_backup, group, challenge, from}, state) do
+    group_backup =
+      state.cache
+      |> Enum.filter(fn {_k, {g, _}} -> g == group end)
+      |> Enum.map(fn {k, {_, v}} -> {k, v} end)
+
+    :ok = GenServer.cast(from, {:resp_backup, challenge, group, group_backup})
+    {:noreply, state}
+  end
+
+  def handle_cast({:resp_backup, challenge, group, group_backup}, state)
+      when challenge == state.backup_challenge and state.backup_challenge != :node_started do
+    state =
+      case Map.get(state.backup_answers, group, []) do
+        [] ->
+          # First response from a backup, store it and wait for an additional response
+          %{state | backup_answers: Map.put(state.backup_answers, group, [group_backup])}
+
+        [current] ->
+          if MapSet.new(current) == MapSet.new(group_backup) do
+            # 2 backups with the same challenge responded with the same answer
+            # Assume this is the current state for this group
+            group_cache =
+              group_backup |> Enum.map(fn {k, v} -> {k, {group, v}} end) |> Map.new()
+
+            new_backup_answers = Map.delete(state.backup_answers, group)
+
+            if map_size(new_backup_answers) == 0 do
+              # All groups have responded
+              Logger.info("All groups have responded")
+
+              %{
+                state
+                | cache: Map.merge(state.cache, group_cache),
+                  backup_challenge: :node_started,
+                  backup_answers: nil
+              }
+            else
+              %{
+                state
+                | cache: Map.merge(state.cache, group_cache),
+                  backup_answers: new_backup_answers
+              }
+            end
+          else
+            # Different answers from backups
+            # Trouble ahead
+            Logger.error("Different answers from backups, conflict resolution needed")
+            state
+          end
+      end
+
+    {:noreply, state}
+  end
+
+  # Discard responses when challenge is not the current one OR the node is already ready
+  def handle_cast({:resp_backup, _challenge, _group, _group_backup}, state) do
+    {:noreply, state}
   end
 
   @impl true
@@ -110,13 +170,13 @@ defmodule Apothik.Cache do
   end
 
   def handle_call({:dump, group}, _from, state) do
-    filtered_on_groups = for {_, {^group, _}} = c <- state, into: %{}, do: c
+    filtered_on_groups = for {_, {^group, _}} = c <- state.cache, into: %{}, do: c
     {:reply, filtered_on_groups, state}
   end
 
   def handle_call({:get, k}, _from, state) do
     value =
-      case Map.get(state, k) do
+      case Map.get(state.cache, k) do
         nil ->
           nil
 
@@ -134,20 +194,29 @@ defmodule Apothik.Cache do
     |> Enum.filter(&alive?/1)
     |> Enum.each(fn replica -> :ok = put_replica(replica, group, k, v) end)
 
-    {:reply, :ok, Map.put(state, k, {group, v})}
+    state = %{state | cache: Map.put(state.cache, k, {group, v})}
+    {:reply, :ok, state}
   end
 
   def handle_call({:put_replica, group, k, v}, _from, state) do
-    {:reply, :ok, Map.put(state, k, {group, v})}
+    state = %{state | cache: Map.put(state.cache, k, {group, v})}
+    {:reply, :ok, state}
   end
 
   def handle_call(:stats, _from, state) do
-    {:reply, map_size(state), state}
+    {:reply, map_size(state.cache), state}
   end
 
   @impl true
-  def handle_info(msg, state) do
-    Logger.warning(msg)
+  def handle_info(:new_request, state) when state.backup_challenge != :node_started do
+    Logger.info("New request")
+    state = %{state | backup_challenge: state.backup_challenge + 1, backup_answers: %{}}
+    Process.send_after(self(), :new_request, 2000)
+    request_backups(state.backup_challenge)
+    {:noreply, state}
+  end
+
+  def handle_info(_msg, state) do
     {:noreply, state}
   end
 end
