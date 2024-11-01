@@ -28,8 +28,16 @@ defmodule Apothik.Cache do
   defp alive?(node_name), do: node_name == Node.self() or node_name in Node.list()
 
   # Retrieve a live node in a group, if any
-  defp peer(group_number) do
+  defp pick_a_live_node(group_number) do
     case group_number |> nodes_in_group() |> Enum.filter(&alive?/1) do
+      [] -> nil
+      [a | _] -> a
+    end
+  end
+
+  # Retrieve a live node in a group other than me, if any
+  defp pick_a_live_peer(me, group_number) do
+    case group_number |> nodes_in_group() |> Enum.reject(&(&1 == me)) |> Enum.filter(&alive?/1) do
       [] -> nil
       [a | _] -> a
     end
@@ -38,7 +46,7 @@ defmodule Apothik.Cache do
   #### GenServer Interface
   def get(k) do
     # Find a live node and retrieve the value for the key
-    alive_node = k |> key_to_group_number() |> peer()
+    alive_node = k |> key_to_group_number() |> pick_a_live_node()
     GenServer.call({__MODULE__, Cluster.node_name(alive_node)}, {:get, k})
   end
 
@@ -47,12 +55,9 @@ defmodule Apothik.Cache do
     # Map a key to a group number
     group_number = key_to_group_number(k)
     # Find the first alive node belonging to the group
-    alive_node = peer(group_number)
+    alive_node = pick_a_live_node(group_number)
     GenServer.call({__MODULE__, Cluster.node_name(alive_node)}, {:put, group_number, k, v})
   end
-
-  def dump(node, for_group),
-    do: GenServer.call({__MODULE__, Cluster.node_name(node)}, {:dump, for_group})
 
   def stats(), do: GenServer.call(__MODULE__, :stats)
 
@@ -68,23 +73,23 @@ defmodule Apothik.Cache do
     GenServer.call({__MODULE__, node_name}, {:put_replica, group, k, v})
   end
 
-  #### Implementation
+  # Hydration (the process to ask other nodes for their data when starting up)
+  def hydrate() do
+    me = Node.self() |> Cluster.number_from_node_name()
+    # For each Group to which the node belongs, find a live node and request its data
+    Enum.each(
+      groups_of_a_node(me),
+      fn group ->
+        peer = pick_a_live_peer(me, group)
 
-  def hydrate_from_group(me, group) do
-    # Find another node in the group which is alive
-    peer = group |> nodes_in_group() |> Enum.reject(&(&1 == me)) |> Enum.filter(&alive?/1)
-
-    if peer == [] do
-      %{}
-    else
-      try do
-        %{}
-        #        dump(hd(peer), group)
-      catch
-        _ -> %{}
+        if peer != nil do
+          GenServer.cast({__MODULE__, Cluster.node_name(peer)}, {:i_am_thirsty, group, self()})
+        end
       end
-    end
+    )
   end
+
+  #### Implementation
 
   @impl true
   def init(_args) do
@@ -93,15 +98,19 @@ defmodule Apothik.Cache do
 
   @impl true
   def handle_continue(_continue_args, state) do
-    me = Node.self() |> Cluster.number_from_node_name()
+    hydrate()
+    {:noreply, state}
+  end
 
-    me
-    |> groups_of_a_node()
-    |> Enum.reduce(
-      state,
-      fn group, acc -> Map.merge(acc, hydrate_from_group(me, group)) end
-    )
-    |> then(&{:noreply, &1})
+  @impl true
+  def handle_cast({:i_am_thirsty, group, from}, state) do
+    filtered_on_groups = for {_, {^group, _}} = c <- state, into: %{}, do: c
+    GenServer.cast(from, {:drink, filtered_on_groups})
+    {:noreply, state}
+  end
+
+  def handle_cast({:drink, payload}, state) do
+    {:noreply, Map.merge(state, payload)}
   end
 
   @impl true
@@ -109,22 +118,8 @@ defmodule Apothik.Cache do
     {:reply, :ok, state}
   end
 
-  def handle_call({:dump, group}, _from, state) do
-    filtered_on_groups = for {_, {^group, _}} = c <- state, into: %{}, do: c
-    {:reply, filtered_on_groups, state}
-  end
-
   def handle_call({:get, k}, _from, state) do
-    value =
-      case Map.get(state, k) do
-        nil ->
-          nil
-
-        {_, v} ->
-          v
-      end
-
-    {:reply, value, state}
+    {:reply, Map.get(state, k, {nil, nil}) |> elem(1), state}
   end
 
   def handle_call({:put, group, k, v}, _from, state) do
@@ -143,11 +138,5 @@ defmodule Apothik.Cache do
 
   def handle_call(:stats, _from, state) do
     {:reply, map_size(state), state}
-  end
-
-  @impl true
-  def handle_info(msg, state) do
-    Logger.warning(msg)
-    {:noreply, state}
   end
 end
