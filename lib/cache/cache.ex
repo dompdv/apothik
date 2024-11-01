@@ -73,8 +73,16 @@ defmodule Apothik.Cache do
     GenServer.call({__MODULE__, node_name}, {:put_replica, group, k, v})
   end
 
-  # Hydration (the process to ask other nodes for their data when starting up)
-  def hydrate() do
+  #### Implementation
+
+  @impl true
+  def init(_args) do
+    {:ok, %{}, {:continue, nil}}
+  end
+
+  @impl true
+  def handle_continue(_, state) do
+    # Hydration (the process to ask other nodes for their data when starting up)
     me = Node.self() |> Cluster.number_from_node_name()
     # For each Group to which the node belongs, find a live node and request its data
     Enum.each(
@@ -87,18 +95,7 @@ defmodule Apothik.Cache do
         end
       end
     )
-  end
 
-  #### Implementation
-
-  @impl true
-  def init(_args) do
-    {:ok, %{}, {:continue, nil}}
-  end
-
-  @impl true
-  def handle_continue(_continue_args, state) do
-    hydrate()
     {:noreply, state}
   end
 
