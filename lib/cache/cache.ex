@@ -99,6 +99,7 @@ defmodule Apothik.Cache do
 
   @impl true
   def handle_continue(_continue_args, state) do
+    # BUG: Populate the backup answers with the current group
     Process.send_after(self(), :new_request, 500)
     {:noreply, state}
   end
@@ -174,7 +175,8 @@ defmodule Apothik.Cache do
     {:reply, filtered_on_groups, state}
   end
 
-  def handle_call({:get, k}, _from, state) do
+  def handle_call({:get, k}, _from, state)
+      when state.backup_challenge != :node_started do
     value =
       case Map.get(state.cache, k) do
         nil ->
@@ -187,7 +189,8 @@ defmodule Apothik.Cache do
     {:reply, value, state}
   end
 
-  def handle_call({:put, group, k, v}, _from, state) do
+  def handle_call({:put, group, k, v}, _from, state)
+      when state.backup_challenge != :node_started do
     group
     |> nodes_in_group()
     |> Enum.reject(fn i -> Cluster.node_name(i) == Node.self() end)
