@@ -311,6 +311,8 @@ Il y a tellement de choses criticables qu'on ne sait pas par où commencer. Lan�
 - on envoie en un seul message un tiers de la mémoire du noeud. Dans le cas d'un vrai cache, cette opération n'est sans doute pas possible (quelle est la taille maximale d'un message dans la BEAM ? nous l'ignorons. De plus, il nous semble que l'envoi d'un message implique une recopie.). En outre, l'opération risque de bloquer tous les noeuds répondant pendant un temps sensible, ce qui n'est pas acceptable dans le cas d'un cluster en forte activité
 - mais surtout, que se passe-t-il si en parallèle le cache est modifié? Les modifications (`put`) peuvent intervenir dans n'importe quelle séquence. Rien ne garantit que les retours des noeuds d'un même groupe (ceux captés dans `:drink`) offrent la même vision du monde. On peut tout à fait imaginer des scénarios où ils écrasent des données toutes neuves avec leurs anciennes valeurs.
 
+Et c'est sans compter les soucis réseau, avec des latences et des deconnections qui peuvent isoler des noeuds pendant quelques millisecondes et désynchroniser l'état du cluster sur 1 ou plusieurs groupes.
+
 ## Est-ce que ça marche vraiment?
 
 A ce moment-là, nous sommes partis sur une pente que les informaticiens connaissent bien, et qui a été parfaitement imagée par [l'écureuil du film "l'age de glâce"](https://en.wikipedia.org/wiki/Scrat). Nous avons essayé de colmater la première brêche, puis la deuxième, mais la première en a ouvert une troisième, etc.
