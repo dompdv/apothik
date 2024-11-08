@@ -11,11 +11,10 @@ defmodule Apothik.Cache do
     [group_number, rem(group_number + 1 + n, n), rem(group_number + 2 + n, n)]
   end
 
-  # Give the list of groups to which the node belongs
-  #  defp groups_of_a_node(node_number) do
-  #    n = Cluster.static_nb_nodes()
-  #    [node_number, rem(node_number - 1, n), rem(node_number - 2, n)]
-  #  end
+  defp groups_of_a_node(node_number) do
+    n = Cluster.static_nb_nodes()
+    [node_number, rem(node_number - 1, n), rem(node_number - 2, n)]
+  end
 
   # Map a key to a group number
   defp key_to_group_number(k), do: :erlang.phash2(k, Cluster.static_nb_nodes())
@@ -79,33 +78,25 @@ defmodule Apothik.Cache do
 
   @impl true
   def init(_args) do
-    # Hydration (the process to ask other nodes for their data when starting up)
-    #    me = Node.self() |> Cluster.number_from_node_name()
-    # For each Group to which the node belongs, find a live node and request its data
-    #    Enum.each(
-    #      groups_of_a_node(me),
-    #      fn group ->
-    #       peer = pick_a_live_peer(me, group)
-    #
-    #       if peer != nil do
-    #          GenServer.cast({__MODULE__, Cluster.node_name(peer)}, {:i_am_thirsty, group, self()})
-    #        end
-    #      end
-    #    )
+    me = Node.self() |> Cluster.number_from_node_name()
+
+    for g <- groups_of_a_node(me), peer <- nodes_in_group(g), peer != me, alive?(peer) do
+      GenServer.cast({__MODULE__, Cluster.node_name(peer)}, {:i_am_thirsty, g, self()})
+    end
 
     {:ok, %{}}
   end
 
   @impl true
-  #  def handle_cast({:i_am_thirsty, group, from}, state) do
-  #    filtered_on_groups = for {_, {^group, _}} = c <- state, into: %{}, do: c
-  #    GenServer.cast(from, {:drink, filtered_on_groups})
-  #    {:noreply, state}
-  #  end
+  def handle_cast({:i_am_thirsty, group, from}, state) do
+    filtered_on_group = Map.filter(state, fn {k, _} -> key_to_group_number(k) == group end)
+    GenServer.cast(from, {:drink, filtered_on_group})
+    {:noreply, state}
+  end
 
-  # def handle_cast({:drink, payload}, state) do
-  #   {:noreply, Map.merge(state, payload)}
-  # end
+  def handle_cast({:drink, payload}, state) do
+    {:noreply, Map.merge(state, payload)}
+  end
 
   def handle_cast({:put_as_replica, k, v}, state) do
     {:noreply, Map.put(state, k, v)}

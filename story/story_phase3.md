@@ -234,3 +234,103 @@ iex(master@127.0.0.1)9> Master.sum
 ```
 
 On voit bien que `:a_key` est sur 3 noeuds. On accède bien au cache de n'importe quel noeud et les données sont bien présentes et quand on a chargé les données sur le cluster, on a bien un total de `15006` valeurs stockées, qui est bien `5002 * 3`.
+
+## Récupération de données
+
+Que se passe-t-il en cas de perte de noeud? Eh bien, nous perdons les données, pardi !
+```
+% ./scripts/start_master.sh
+iex(master@127.0.0.1)1> Master.fill(1,5000)
+:ok
+iex(master@127.0.0.1)2> Master.kill(2)
+:ok
+iex(master@127.0.0.1)3> Master.stat
+[  {0, 2992},  {1, 2967},  {2, {:badrpc, :nodedown}},  {3, 3029},  {4, 2978}]
+```
+
+Dans un autre terminal, `./scripts/start_instance.sh 2` (oui, nous avons un petit script équivalent à `elixir --name apothik_$1@127.0.0.1 -S mix run --no-halt`) et revenons dans le `master`:
+```
+iex(master@127.0.0.1)4> Master.stat
+[{0, 2992}, {1, 2967}, {2, 0}, {3, 3029}, {4, 2978}]
+```
+
+Essayons une approche toute simple: quand un noeud démarre, il interroge autour de lui pour récupérer l'information manquante. On va appeler cela "se réhydrater".
+```elixir
+  def init(_args) do
+    me = Node.self() |> Cluster.number_from_node_name()
+
+    for g <- groups_of_a_node(me), peer <- nodes_in_group(g), peer != me, alive?(peer) do
+      GenServer.cast({__MODULE__, Cluster.node_name(peer)}, {:i_am_thirsty, g, self()})
+    end
+
+    {:ok, %{}}
+  end
+
+  def handle_cast({:i_am_thirsty, group, from}, state) do
+    filtered_on_group = Map.filter(state, fn {k, _} -> key_to_group_number(k) == group end)
+    GenServer.cast(from, {:drink, filtered_on_group})
+    {:noreply, state}
+  end
+
+  def handle_cast({:drink, payload}, state) do
+    {:noreply, Map.merge(state, payload)}
+  end
+```
+
+A l'initialisation du noeud, celui-ce demande leur contenu à tous les noeuds de tous les groupes auquel il appartient (sauf à lui-même). Attention, pas exactement tout leur contenu, uniquement leur contenu au titre de l'appartenance à un groupe fixé. Par exemple, si le noeud 0, au titre du groupe 0, demande au noeud 2 son contenu, il ne veut pas récupérer le contenu du noeud 2 au titre de son appartenance au groupe 2 (qui est constitué des noeuds 2,3 & 4, donc pas du noeud 0). 
+
+Aussi, le `{:i_am_thirsty, g, self()})` indique-t-il le groupe au titre duquel se fait la demande, ainsi que l'adresse de retour `self()`. Le noeud répondant va devoir filtrer les valeurs de sa mémoire, c'est le sens de `key_to_group_number(k) == group`. 
+
+A la réception, c'est à dire à la réhydratation (`:drink`), on fusionne simplement les `map`. 
+
+Est ce que ça marche? On relancer le cluster, puis:
+```
+% ./scripts/start_master.sh
+Erlang/OTP 26 [erts-14.2.2] [source] [64-bit] [smp:8:8] [ds:8:8:10] [async-threads:1] [jit] [dtrace]
+
+Interactive Elixir (1.16.2) - press Ctrl+C to exit (type h() ENTER for help)
+iex(master@127.0.0.1)1> Master.fill(1,5000)
+:ok
+iex(master@127.0.0.1)2> Master.stat
+[{0, 2992}, {1, 2967}, {2, 3034}, {3, 3029}, {4, 2978}]
+iex(master@127.0.0.1)3> Master.kill(2)
+:ok
+iex(master@127.0.0.1)4> Master.stat
+[ {0, 2992},  {1, 2967},  {2, {:badrpc, :nodedown}},  {3, 3029},  {4, 2978}]
+```
+et dans un autre terminal `% ./scripts/start_instance.sh 2`. Retour dans le `master`
+```
+iex(master@127.0.0.1)5> Master.stat
+[{0, 2992}, {1, 2967}, {2, 3034}, {3, 3029}, {4, 2978}]
+```
+
+## Ca marche ...mais que c'est moche, mon dieu, que c'est moche
+
+Il y a tellement de choses criticables qu'on ne sait pas par où commencer. Lançons nous: 
+- ça n'est pas très économe : le noeud peut recevoir plusieurs réponses. Il pourrait ignorer les retours dès qu'il a rafraichit les données d'un groupe. Mais même dans ce cas, le mal est fait et chaque noeud du groupe a déjà concocté une réponse ou est en train de le faire
+- on envoie en un seul message un tiers de la mémoire du noeud. Dans le cas d'un vrai cache, cette opération n'est sans doute pas possible (quelle est la taille maximale d'un message dans la BEAM ? nous l'ignorons. De plus, il nous semble que l'envoi d'un message implique une recopie.). En outre, l'opération risque de bloquer tous les noeuds répondant pendant un temps sensible, ce qui n'est pas acceptable dans le cas d'un cluster en forte activité
+- mais surtout, que se passe-t-il si en parallèle le cache est modifié? Les modifications (`put`) peuvent intervenir dans n'importe quelle séquence. Rien ne garantit que les retours des noeuds d'un même groupe (ceux captés dans `:drink`) offrent la même vision du monde. On peut tout à fait imaginer des scénarios où ils écrasent des données toutes neuves avec leurs anciennes valeurs.
+
+## Est-ce que ça marche vraiment?
+
+A ce moment-là, nous sommes partis sur une pente que les informaticiens connaissent bien, et qui a été parfaitement imagée par [l'écureuil du film "l'age de glâce"](https://en.wikipedia.org/wiki/Scrat). Nous avons essayé de colmater la première brêche, puis la deuxième, mais la première en a ouvert une troisième, etc.
+
+Eh oui, nous avions toujours notre ambition initiale en tête. Vous vous souvenez "Ajout de redondance de stockage pour garantir la conservation des données malgré la perte de machine".
+Peut-être que le **"garantir"** était fortement présomptueux. 
+
+Et là nous est revenu la phrase de [Johanna Larsonn](https://www.youtube.com/watch?v=7yU9mvwZKoY), qui disait à peu près "attention, les applications distribuées c'est extrêment difficile mais il y a quand même des cas où l'on peut se lancer". 
+
+Le mot "garantir" nous a entrainé trop loin. Nous avons compris que ce qui fait la difficulté d'un système distribué, ce sont les **qualités** que l'on en attend. Et là nous avons voulu inconsciemment offrir à notre cache distribué une partie des qualités d'une base de données distribuée, ce qui est clairement au-delà de nos faibles forces de débutants.
+
+En résumé, non, cela ne marche pas. En tout cas si l'on ambitionne d'aller au bout de notre phase 3 avec son titre ronflant et présomptueux.
+
+## Peut-on viser plus bas ?
+
+Peut-être que nous pourrions nous concentrer sur les qualités attendues d'un **cache**. Et c'est le principal enseignement de notre travail jusqu'ici: précise bien ce que tu attends de ton application. 
+
+D'ailleurs, il nous revient soudainement que nous avons lu un jour un fameux théorême qui explique qu'il est mathématiquement impossible de tout avoir: le [théorême CAP](https://en.wikipedia.org/wiki/CAP_theorem). Et ce ne doit pas le seul théorême d'impossibilité.
+
+Revenons à notre entreprise de coupe claire dans nos ambitions. Ce que nous voulons pour notre **cache**, c'est 
+- minimiser les "loupés" ("cache miss" en franglais), c'est à dire le nombre de fois où le cache ne peut fournir la valeur
+- garantir dans la plupart des cas "normaux" que la valeur retournée est bien la dernière fournie au cluster. A ce stade, nous disons "cas normaux" car notre échec tout frais nous a appris à être modeste et qu'on se doute bien que "tous les cas" sera inaccessible.
+
