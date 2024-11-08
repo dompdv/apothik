@@ -3,9 +3,10 @@ defmodule Apothik.Cache do
   alias Apothik.Cluster
   require Logger
 
+  defstruct cache: %{}
+
   #### Groups and Nodes
 
-  # Give the list of nodes of a group
   defp nodes_in_group(group_number) do
     n = Cluster.static_nb_nodes()
     [group_number, rem(group_number + 1 + n, n), rem(group_number + 2 + n, n)]
@@ -16,14 +17,11 @@ defmodule Apothik.Cache do
     [node_number, rem(node_number - 1, n), rem(node_number - 2, n)]
   end
 
-  # Map a key to a group number
   defp key_to_group_number(k), do: :erlang.phash2(k, Cluster.static_nb_nodes())
 
-  # Check if a node is alive based on its number
   defp alive?(node_number) when is_integer(node_number),
     do: node_number |> Cluster.node_name() |> alive?()
 
-  # Checks if a node is alive based on its name
   defp alive?(node_name), do: node_name == Node.self() or node_name in Node.list()
 
   defp live_nodes_in_a_group(group_number),
@@ -36,7 +34,6 @@ defmodule Apothik.Cache do
     end
   end
 
-  # Retrieve a live node in a group, if any
   defp pick_a_live_node(group_number) do
     case live_nodes_in_a_group(group_number) do
       [] -> nil
@@ -44,21 +41,12 @@ defmodule Apothik.Cache do
     end
   end
 
-  # Retrieve a live node in a group other than me, if any
-  #  defp pick_a_live_peer(me, group_number) do
-  #    case group_number |> nodes_in_group() |> Enum.reject(&(&1 == me)) |> Enum.filter(&alive?/1) do
-  #      [] -> nil
-  #      [a | _] -> a
-  #    end
-  #  end
-
   #### GenServer Interface
   def get(k) do
     alive_node = k |> key_to_group_number() |> pick_a_live_node() |> Cluster.node_name()
     GenServer.call({__MODULE__, alive_node}, {:get, k})
   end
 
-  # Put a {key, value} in the cache
   def put(k, v) do
     alive_node = k |> key_to_group_number() |> pick_a_live_node() |> Cluster.node_name()
     GenServer.call({__MODULE__, alive_node}, {:put, k, v})
@@ -84,40 +72,40 @@ defmodule Apothik.Cache do
       GenServer.cast({__MODULE__, Cluster.node_name(peer)}, {:i_am_thirsty, g, self()})
     end
 
-    {:ok, %{}}
+    {:ok, %__MODULE__{cache: %{}}}
   end
 
   @impl true
-  def handle_cast({:i_am_thirsty, group, from}, state) do
-    filtered_on_group = Map.filter(state, fn {k, _} -> key_to_group_number(k) == group end)
+  def handle_cast({:i_am_thirsty, group, from}, %{cache: cache} = state) do
+    filtered_on_group = Map.filter(cache, fn {k, _} -> key_to_group_number(k) == group end)
     GenServer.cast(from, {:drink, filtered_on_group})
     {:noreply, state}
   end
 
-  def handle_cast({:drink, payload}, state) do
-    {:noreply, Map.merge(state, payload)}
+  def handle_cast({:drink, payload}, %{cache: cache} = state) do
+    {:noreply, %{state | cache: Map.merge(cache, payload)}}
   end
 
-  def handle_cast({:put_as_replica, k, v}, state) do
-    {:noreply, Map.put(state, k, v)}
+  def handle_cast({:put_as_replica, k, v}, %{cache: cache} = state) do
+    {:noreply, %{state | cache: Map.put(cache, k, v)}}
   end
 
   @impl true
-  #  def handle_call({:update_nodes, _nodes}, _from, state), do: {:reply, :ok, state}
+  def handle_call({:get, k}, _from, %{cache: cache} = state) do
+    {:reply, Map.get(cache, k), state}
+  end
 
-  def handle_call({:get, k}, _from, state), do: {:reply, Map.get(state, k), state}
-
-  def handle_call({:put, k, v}, _from, state) do
+  def handle_call({:put, k, v}, _from, %{cache: cache} = state) do
     k
     |> key_to_group_number()
     |> live_nodes_in_a_group()
     |> Enum.reject(fn i -> Cluster.node_name(i) == Node.self() end)
     |> Enum.each(fn replica -> put_as_replica(replica, k, v) end)
 
-    {:reply, :ok, Map.put(state, k, v)}
+    {:reply, :ok, %{state | cache: Map.put(cache, k, v)}}
   end
 
-  def handle_call(:stats, _from, state) do
-    {:reply, map_size(state), state}
+  def handle_call(:stats, _from, %{cache: cache} = state) do
+    {:reply, map_size(cache), state}
   end
 end
