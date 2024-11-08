@@ -6,7 +6,7 @@ Nous n'allons pas raconter toutes nos tentatives et nos errements car ce serait 
 
 ### Redondance, vous avez dit redondance ?
 
-Notre approche est peu naïve : si on stocke plusieurs fois la données (pour la redondance), on se dit intuitivement qu'on doit pouvoir la retrouver en cas de perte d'un noeud. 
+Notre approche est un peu naïve : si on stocke plusieurs fois la données (pour la redondance), on se dit intuitivement qu'on doit pouvoir la retrouver en cas de perte d'un noeud. 
 
 Essayons déjà de la stocker plusieurs fois et on verra si on peut la retrouver après. Pour se simplifier la vie, revenons dans le cas d'un cluster statique (nombre de machines constant hors moment de pannes) et oublions donc les notions de `HashRing` de la phase 2. Pour fixer les idées, prenons 5 machines comme initialement.
 
