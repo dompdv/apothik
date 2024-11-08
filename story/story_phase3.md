@@ -57,6 +57,7 @@ Une clé est alors assignée à un **groupe** et **non** à un noeud. La fonctio
 defp key_to_group_number(k), do: :erlang.phash2(k, Cluster.static_nb_nodes())
 ```
 
+## Ecritures multiples
 
 Que va-t-il se passer quand on écrit une valeur dans le cache ? On va l'écrire 3 fois.
 Tout d'abord, on peut envoyer l'ordre d'écriture à n'importe quel noeud, qui va prendre un noeud au hasard, sauf s'il se trouve que c'est lui-même auquel cas il se privilégie (petite optimisation). Rappelons que l'on peut s'adresser au cache de n'importe quel noeud du cluster ((attention, dans ce texte, l'ordre des fonctions est guidé par la compréhension et ne suit pas nécessairement l'ordre dans le code lui-même))
@@ -116,10 +117,13 @@ Quant à `put_replica/3`, c'est encore plus simple:
   end
 ```
 
+## Dans l'enfer du deadlock
+
 Il faut faire **très attention** à ce que nous avons subrepticement glissé ici. Ca n'a l'air de rien mais **c'est là que nous basculons dans l'enfer des applications distribuées**. Touchons en un mot avant d'y revenir. Nous avons utilisé `GenServer.cast`. Et pas `GenServer.call`. Ce qui signifie que nous envoyons une bouteille à la mer pour dire à nos voisins "met à jour ton cache" mais nous n'attendons pas de retour. Rien ne nous garantit que le message a été traité, nous n'avons pas d'acquittement. Ainsi, les noeuds du groupe n'ont **aucune garantie** d'avoir le même état. 
 
 Pourquoi ne pas mettre un `call` alors? C'est ce que nous avons fait au début, naïfs que nous étions (et nous sommes encore; Il faut visiblement des années de déniaisement dans le monde distribué). Mais nous tombons sur l'enfer du **deadlock**. Si deux noeuds du groupe sont simumtanément sollicités pour mettre à jour le cache, ils peuvent s'attendre indéfiniment. Dans la réalité, il y a un `timeout` standard, que l'on peut changer dans les options de `GensServer.call`, et qui lancer une exception quand il est atteint. Ca y est, nous sommes entrés dans la cour des grands. Plus précisément, nous l'apercevons au travers du grillage.
 
+## Récapitulatif et tests
 Voilà ce que ça donne à la fin (notez `get/1`, qui fonctionne comme attendu, et l'absence de `delete` qui serait à l'image de `put`, mais parfois la flemme sort gagnante, voilà tout)
 ```elixir
 defmodule Apothik.Cache do
