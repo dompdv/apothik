@@ -6,15 +6,15 @@ Nous n'allons pas raconter toutes nos tentatives et nos errements car ce serait 
 
 ### Redondance, vous avez dit redondance ?
 
-Notre approche est peu naïf: si on stocke plusieurs fois la données (la redondance), on se dit intuitivement qu'on doit pouvoir la retrouver en cas de perte d'un noeud. 
+Notre approche est peu naïve : si on stocke plusieurs fois la données (pour la redondance), on se dit intuitivement qu'on doit pouvoir la retrouver en cas de perte d'un noeud. 
 
 Essayons déjà de la stocker plusieurs fois et on verra si on peut la retrouver après. Pour se simplifier la vie, revenons dans le cas d'un cluster statique (nombre de machines constant hors moment de pannes) et oublions donc les notions de `HashRing` de la phase 2. Pour fixer les idées, prenons 5 machines comme initialement.
 
 Comment choisir sur quelle machine stocker la donnée et stocker les copies ? Au début, influencés par cette façon de poser le problème, nous sommes partis de l'idée d'un noeud "maître" et de "réplicas". Par exemple, un maître et 2 réplicas. Dans cette hypothèse, la donnée est écrite 3 fois. 
 
-Mais est-ce que cette disymétrie entre rôles de maître-réplica est finalement une bonne idée ? Que se passe-t-il si le maître tombe? Il faut se souvenir de quel noeud est le nouveau, et que cet connaissance se répande correctement au cluster tout entier à chaque événement (perte et retour). Et finalement, à quoi bon?
+Mais est-ce que cette dissymétrie entre rôles de maître-réplica est finalement une bonne idée ? Que se passe-t-il si le maître tombe? Il faut se souvenir de quel noeud est le nouveau, et que cette connaissance se répande correctement dans le cluster tout entier à chaque événement (perte et retour). Et finalement, à quoi bon?
 
-Ces tâtonnement ont fait émerger une idée beaucoup plus simple, celle de **groupe**. 
+Ces tâtonnements ont fait émerger une idée beaucoup plus simple, celle de **groupe**. 
 
 Un groupe est un ensemble de noeuds fixes, qui ont des rôles symétriques au sein du groupe. Dans le cas d'un cluster de 5 noeuds numérotés de 0 à 4, nous avons aussi 5 groupes numérotés de 0 à 4. Le groupe 0 aura les noeuds 0,1 & 2. Le groupe 4 aura les noeuds 4,0 & 1. De façon générale, le groupe `n` a les noeuds `n+1` et `n+2` modulo 5. Inversement, le noeud 0 appartiendra donc au groupe 0, 4 & 3. Tout groupe a 3 noeuds et tout noeud appartient à 3 groupes.
 
@@ -121,7 +121,7 @@ Quant à `put_replica/3`, c'est encore plus simple:
 
 Il faut faire **très attention** à ce que nous avons subrepticement glissé ici. Ca n'a l'air de rien mais **c'est là que nous basculons dans l'enfer des applications distribuées**. Touchons en un mot avant d'y revenir. Nous avons utilisé `GenServer.cast`. Et pas `GenServer.call`. Ce qui signifie que nous envoyons une bouteille à la mer pour dire à nos voisins "met à jour ton cache" mais nous n'attendons pas de retour. Rien ne nous garantit que le message a été traité, nous n'avons pas d'acquittement. Ainsi, les noeuds du groupe n'ont **aucune garantie** d'avoir le même état. 
 
-Pourquoi ne pas mettre un `call` alors? C'est ce que nous avons fait au début, naïfs que nous étions (et nous sommes encore; Il faut visiblement des années de déniaisement dans le monde distribué). Mais nous tombons sur l'enfer du **deadlock**. Si deux noeuds du groupe sont simumtanément sollicités pour mettre à jour le cache, ils peuvent s'attendre indéfiniment. Dans la réalité, il y a un `timeout` standard, que l'on peut changer dans les options de `GensServer.call`, et qui lancer une exception quand il est atteint. Ca y est, nous sommes entrés dans la cour des grands. Plus précisément, nous l'apercevons au travers du grillage.
+Pourquoi ne pas mettre un `call` alors? C'est ce que nous avons fait au début, naïfs que nous étions (et nous le sommes encore; Il faut visiblement des années de déniaisement dans le monde distribué). Mais nous tombons sur l'enfer du **deadlock**. Si deux noeuds du groupe sont simumtanément sollicités pour mettre à jour le cache, ils peuvent s'attendre indéfiniment. Dans la réalité, il y a un `timeout` standard, que l'on peut changer dans les options de `GensServer.call`, et qui peut lancer une exception quand il est atteint. Ca y est, nous sommes entrés dans la cour des grands. Plus précisément, nous l'apercevons au travers du grillage.
 
 ## Récapitulatif et tests
 Voilà ce que ça donne à la fin (notez `get/1`, qui fonctionne comme attendu, et l'absence de `delete` qui serait à l'image de `put`, mais parfois la flemme sort gagnante, voilà tout)
@@ -237,7 +237,7 @@ On voit bien que `:a_key` est sur 3 noeuds. On accède bien au cache de n'import
 
 ## Récupération de données
 
-Que se passe-t-il en cas de perte de noeud? Eh bien, nous perdons les données, pardi !
+Que se passe-t-il en cas de perte de noeud ? Eh bien, nous perdons les données, pardi !
 ```
 % ./scripts/start_master.sh
 iex(master@127.0.0.1)1> Master.fill(1,5000)
@@ -277,7 +277,7 @@ Essayons une approche toute simple: quand un noeud démarre, il interroge autour
   end
 ```
 
-A l'initialisation du noeud, celui-ce demande leur contenu à tous les noeuds de tous les groupes auquel il appartient (sauf à lui-même). Attention, pas exactement tout leur contenu, uniquement leur contenu au titre de l'appartenance à un groupe fixé. Par exemple, si le noeud 0, au titre du groupe 0, demande au noeud 2 son contenu, il ne veut pas récupérer le contenu du noeud 2 au titre de son appartenance au groupe 2 (qui est constitué des noeuds 2,3 & 4, donc pas du noeud 0). 
+A l'initialisation du noeud, celui-ci demande leur contenu à tous les noeuds de tous les groupes auquel il appartient (sauf à lui-même). Attention, pas exactement tout leur contenu, uniquement leur contenu au titre de l'appartenance à un groupe fixé. Par exemple, si le noeud 0, au titre du groupe 0, demande au noeud 2 son contenu, il ne veut pas récupérer le contenu du noeud 2 au titre de son appartenance au groupe 2 (qui est constitué des noeuds 2,3 & 4, donc pas du noeud 0). 
 
 Aussi, le `{:i_am_thirsty, g, self()})` indique-t-il le groupe au titre duquel se fait la demande, ainsi que l'adresse de retour `self()`. Le noeud répondant va devoir filtrer les valeurs de sa mémoire, c'est le sens de `key_to_group_number(k) == group`. 
 
@@ -320,7 +320,7 @@ A ce moment-là, nous sommes partis sur une pente que les informaticiens connais
 Eh oui, nous avions toujours notre ambition initiale en tête. Vous vous souvenez "Ajout de redondance de stockage pour garantir la conservation des données malgré la perte de machine".
 Peut-être que le **"garantir"** était fortement présomptueux. 
 
-Et là nous est revenu la phrase de [Johanna Larsonn](https://www.youtube.com/watch?v=7yU9mvwZKoY), qui disait à peu près "attention, les applications distribuées c'est extrêment difficile mais il y a quand même des cas où l'on peut se lancer". 
+Et là nous est revenue la phrase de [Johanna Larsonn](https://www.youtube.com/watch?v=7yU9mvwZKoY), qui disait à peu près "attention, les applications distribuées c'est extrêment difficile mais il y a quand même des cas où l'on peut se lancer". 
 
 Le mot "garantir" nous a entrainé trop loin. Nous avons compris que ce qui fait la difficulté d'un système distribué, ce sont les **qualités** que l'on en attend. Et là nous avons voulu inconsciemment offrir à notre cache distribué une partie des qualités d'une base de données distribuée, ce qui est clairement au-delà de nos faibles forces de débutants.
 
