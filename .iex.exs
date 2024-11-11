@@ -1,4 +1,5 @@
 defmodule Master do
+  @nb_nodes 5
   def stat(i) do
     :rpc.call(:"apothik_#{i}@127.0.0.1", Apothik.Cache, :stats, [])
   end
@@ -23,7 +24,7 @@ defmodule Master do
     Enum.each(1..n, fn j -> put(i, "k_#{i}_#{j}", j) end)
   end
   def stat() do
-    Enum.map(1..5, fn i -> {i,stat(i)} end)
+    Enum.map(0..(@nb_nodes-1), fn i -> {i,stat(i)} end)
   end
   def sum() do
     (for {_,s} <- stat(), is_integer(s), do: s) |> Enum.sum()

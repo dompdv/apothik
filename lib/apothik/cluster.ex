@@ -1,14 +1,23 @@
 defmodule Apothik.Cluster do
   alias Apothik.Cache
   use GenServer
+  require Logger
+
+  @nb_nodes 5
+
+  @hosts for i <- 0..(@nb_nodes - 1), into: %{}, do: {i, :"apothik_#{i}@127.0.0.1"}
+
+  def static_nb_nodes(), do: @nb_nodes
 
   def nb_nodes(), do: GenServer.call(__MODULE__, :nb_nodes)
 
-  def node_name(i), do: :"apothik_#{i}@127.0.0.1"
+  def node_name(i), do: @hosts[i]
 
-  def node_list(nb_node) do
-    for i <- 1..nb_node, do: node_name(i)
+  def number_from_node_name(node) do
+    Enum.find(@hosts, fn {_, v} -> v == node end) |> elem(0)
   end
+
+  def node_list(), do: Map.values(@hosts)
 
   def list_apothik_nodes() do
     [Node.self() | Node.list()] |> Enum.filter(&apothik?/1) |> Enum.sort()
@@ -48,7 +57,7 @@ defmodule Apothik.Cluster do
   end
 
   def handle_info(msg, state) do
-    IO.inspect(msg)
+    Logger.info("handle_info #{inspect(msg)}")
     {:noreply, state}
   end
 end
