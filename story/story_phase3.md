@@ -354,3 +354,133 @@ Revenons à notre entreprise de coupe claire dans nos ambitions. Ce que nous vou
 - minimiser les "loupés" ("cache miss" en franglais), c'est à dire le nombre de fois où le cache ne peut fournir la valeur
 - garantir dans la plupart des cas "normaux" que la valeur retournée est bien la dernière fournie au cluster. A ce stade, nous disons "cas normaux" car notre échec tout frais nous a appris à être modeste et qu'on se doute bien que "tous les cas" sera bien trop difficile pour nous.
 
+## Essayons de nous réhydrater gorgée par gorgée
+
+Revenons sur nos pas: supprimons notre méthode d'hydratation massive au démarrage, ainsi que les `handle` associés . Vous vous souvenez:
+```elixir
+for g <- groups_of_a_node(me), peer <- nodes_in_group(g), peer != me, alive?(peer) do
+  GenServer.cast({__MODULE__, Cluster.node_name(peer)}, {:i_am_thirsty, g, self()})
+end
+```
+
+Notre idée est de commencer de façon extrêmement modeste. Au démarrage du noeud, rien de particulier ne se passe, pas de réhydratation. Le noeud va réagir aux `put`et `put_as_replica` comme d'habitude. En revanche, il va gérer les `get` de façon différente. Si il possède la clé en cache, il renvoie évidemment la valeur associée. En revanche, s'il n'a pas la clé, il va demander à un noeud pair la valeur, la stocker et la retourner. 
+
+Cette approche assure une réhydratation progressive sur la base de la demande constatée. 
+
+Nous allons avoir besoin que l'état de notre `GenServer` soit plus riche que simplement les données de cache. Nous ajoutons :
+```elixir
+defstruct cache: %{}, pending_gets: %{}
+```
+`cache` sont pour les données de cache, `pending_gets` est expliqué plus bas. Toutes les méthodes doivent être légèrement et trivialement adaptée pour transformer ce qui fut `state` en `state.cache`.
+
+Voici à quoi ressemble la méthode `get`:
+```elixir
+  def handle_call({:get, k}, from, state) do
+    %{cache: cache, pending_gets: pending_gets} = state
+
+    case Map.get(cache, k) do
+      nil ->
+        peer =
+          k
+          |> key_to_group_number()
+          |> live_nodes_in_a_group()
+          |> Enum.reject(fn i -> Cluster.node_name(i) == Node.self() end)
+          |> Enum.random()
+
+        :ok = GenServer.cast({__MODULE__, Cluster.node_name(peer)}, {:hydrate_key, self(), k})
+
+        {:noreply, %{state | pending_gets: [{k, from} | pending_gets]}}
+
+      val ->
+        {:reply, val, state}
+    end
+  end
+```
+
+Nous avons utilisé ici un mécanisme plus sophistiqué (nous laissons aux lecteurs le soin de nous dire si nous n'aurions pas pu utilement l'utiliser auparavant). Notre objectif est que cette requête (aller chercher la valeur chez `peer`) ne soit pas bloquante pour le noeud qui se réhydrate. C'est une possibilité de `GenServer`: on peut renvoyer `:noreply`, qui laisse le process appelant en attente, mais libère l'exécution. Par la suite, la réponse est réalisée par un [`GenServer.reply/2`](https://hexdocs.pm/elixir/GenServer.html#reply/2). Allez voir l'exemple de la documentation, c'est parlant. Il faut néammoins se rappeler des appels en attentes, en premier lieu les `pid` des processus appelants.
+
+En résumé (dans le cas d'une clé absente):
+- sélectionner au hasard un réplica bien réveillé. 
+- lui demander en asynchrone la valeur recherchée (et lui indiquer le `pid` retour)
+- stocker la requête dans `pending_gets`. Au début, nous avions utilisé une `map` pour `pending_gets` du type `%{k => pid}`. Mais il y aurait eu un problème en cas d'appel quasi simultané de deux processus différents sur la même clé. 
+- mettre l'appelant en attente. 
+
+De son côté, le replica répond très simplement, toujours en asynchrone:
+```elixir
+  def handle_cast({:hydrate_key, from, k}, %{cache: cache} = state) do
+    :ok = GenServer.cast(from, {:drink_key, k, cache[k]})
+    {:noreply, state}
+  end
+```
+
+Et quand on revient:
+```elixir
+  def handle_cast({:drink_key, k, v}, state) do
+    %{cache: cache, pending_gets: pending_gets} = state
+
+    {to_reply, new_pending_gets} =
+      Enum.split_with(pending_gets, fn {hk, _} -> k == hk end)
+
+    Enum.each(to_reply, fn {_, client} -> GenServer.reply(client, v) end)
+
+    new_cache =
+      case Map.get(cache, k) do
+        nil -> Map.put(cache, k, v)
+        _ -> cache
+      end
+
+    {:noreply, %{state | cache: new_cache, pending_gets: new_pending_gets}}
+  end
+```
+
+Les étapes:
+- séparer les demandes qui concernaient la clé des restantes
+- envoyer un `reply` aux processus appelants
+- si le cache n'a pas été mis à jour entre-temps (avec un soupçon que la donnée est plus fraîche), on le mets à jour
+
+Essayons, avec dans un terminal `./scripts/start_cluster.sh` et dans l'autre: 
+```
+% ./scripts/start_master.sh
+iex(master@127.0.0.1)1> Master.put(4,"hello","world")
+:ok
+iex(master@127.0.0.1)2> Master.stat
+[{0, 1}, {1, 1}, {2, 0}, {3, 0}, {4, 1}]
+iex(master@127.0.0.1)3> Master.kill(0)
+:ok
+iex(master@127.0.0.1)4> Master.stat
+[{0, {:badrpc, :nodedown}}, {1, 1}, {2, 0}, {3, 0}, {4, 1}]
+```
+On tue le noeud 0 qui fait partie du groupe 4. Dans un autre terminal, on le relance `./scripts/start_instance.sh 0`, puis: 
+```
+iex(master@127.0.0.1)5> Master.stat
+[{0, 0}, {1, 1}, {2, 0}, {3, 0}, {4, 1}]
+iex(master@127.0.0.1)6> Master.get(4,"hello")
+"world"
+iex(master@127.0.0.1)7> Master.stat
+[{0, 0}, {1, 1}, {2, 0}, {3, 0}, {4, 1}]
+iex(master@127.0.0.1)8> Master.get(0,"hello")
+"world"
+iex(master@127.0.0.1)9> Master.stat
+[{0, 1}, {1, 1}, {2, 0}, {3, 0}, {4, 1}]
+iex(master@127.0.0.1)10> :rpc.call(:"apothik_0@127.0.0.1", :sys, :get_state, [Apothik.Cache]) 
+%{cache: %{"hello" => "world"}, __struct__: Apothik.Cache, pending_gets: []}
+```
+
+Au retour, le noeud est vide. Si l'on s'adress au noeud 4, il va pouvoir répondre car il a la clé disponible. Cela ne change pas le contenu du noeud 0. En revanche, si on s'adresse au noeud 0, on voit bien qu'il obtient la réponse et qu'il se réhydrate. La liste des `pending_gets` a bien été vidée.
+
+Entre parenthèse, c'est tellement commode qu'on ajoute à `.iex.exs` :
+```elixir
+  def inside(i) do
+    :rpc.call(:"apothik_#{i}@127.0.0.1", :sys, :get_state, [Apothik.Cache])
+  end
+```
+
+Où en sommes nous?
+- on évite les loupés
+- l'état a l'air raisonnablement maintenu cohérent (nous ne sommes pas sûr de nous, hein)
+- pas besoin d'avoir un régime de fonctionnement différent ("je me réhydrate", "ça y est, je suis prêt")
+- on a une perte de performance à chaque appel sur une clé non hydratée. Cette perte ira diminuant avec la réhydratation du noeud
+- et une perte de performance quand le cache est interrogé sur une clé normalement absente (qui n'a pas été positionnée auparavant). En effet, il faut que 2 noeuds se concertent pour répondre "on n'a pas cela en magasin".
+
+
+
