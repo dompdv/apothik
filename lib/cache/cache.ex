@@ -3,7 +3,7 @@ defmodule Apothik.Cache do
   alias Apothik.Cluster
   require Logger
 
-  defstruct cache: %{}
+  defstruct cache: %{}, pending_key_hydration: %{}
 
   #### Groups and Nodes
 
@@ -68,11 +68,11 @@ defmodule Apothik.Cache do
   def init(_args) do
     me = Node.self() |> Cluster.number_from_node_name()
 
-    for g <- groups_of_a_node(me), peer <- nodes_in_group(g), peer != me, alive?(peer) do
-      GenServer.cast({__MODULE__, Cluster.node_name(peer)}, {:i_am_thirsty, g, self()})
-    end
+    # for g <- groups_of_a_node(me), peer <- nodes_in_group(g), peer != me, alive?(peer) do
+    #   GenServer.cast({__MODULE__, Cluster.node_name(peer)}, {:i_am_thirsty, g, self()})
+    # end
 
-    {:ok, %__MODULE__{cache: %{}}}
+    {:ok, %__MODULE__{}}
   end
 
   @impl true
@@ -86,13 +86,47 @@ defmodule Apothik.Cache do
     {:noreply, %{state | cache: Map.merge(cache, payload)}}
   end
 
+  def handle_cast({:drink_key, k, v}, state) do
+    %{cache: cache, pending_key_hydration: pending_key_hydration} = state
+    client = pending_key_hydration[k]
+    GenServer.reply(client, v)
+
+    {:noreply,
+     %{
+       state
+       | cache: Map.put(cache, k, v),
+         pending_key_hydration: Map.delete(pending_key_hydration, k)
+     }}
+  end
+
   def handle_cast({:put_as_replica, k, v}, %{cache: cache} = state) do
     {:noreply, %{state | cache: Map.put(cache, k, v)}}
   end
 
+  def handle_cast({:hydrate_key, from, k}, %{cache: cache} = state) do
+    :ok = GenServer.cast(from, {:drink_key, k, cache[k]})
+    {:noreply, state}
+  end
+
   @impl true
-  def handle_call({:get, k}, _from, %{cache: cache} = state) do
-    {:reply, Map.get(cache, k), state}
+  def handle_call({:get, k}, from, %{cache: cache} = state) do
+    case Map.get(cache, k) do
+      nil ->
+        peer =
+          k
+          |> key_to_group_number()
+          |> live_nodes_in_a_group()
+          |> Enum.reject(fn i -> Cluster.node_name(i) == Node.self() end)
+          |> Enum.random()
+
+        :ok = GenServer.cast({__MODULE__, Cluster.node_name(peer)}, {:hydrate_key, self(), k})
+
+        {:noreply,
+         %{state | pending_key_hydration: Map.put(state.pending_key_hydration, k, from)}}
+
+      val ->
+        {:reply, val, state}
+    end
   end
 
   def handle_call({:put, k, v}, _from, %{cache: cache} = state) do
