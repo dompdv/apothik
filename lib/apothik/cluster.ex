@@ -1,6 +1,7 @@
 defmodule Apothik.Cluster do
   alias Apothik.Cache
   use GenServer
+  require Logger
 
   @nb_nodes 5
 
@@ -56,7 +57,7 @@ defmodule Apothik.Cluster do
   end
 
   def handle_info(msg, state) do
-    IO.inspect(msg)
+    Logger.info("handle_info #{inspect(msg)}")
     {:noreply, state}
   end
 end

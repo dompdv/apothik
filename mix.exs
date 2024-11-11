@@ -22,8 +22,10 @@ defmodule Apothik.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
+      {:delta_crdt, "~> 0.6.5"},
       {:libcluster, "~> 3.4"},
-      {:libring, "~> 1.7"}
+      {:libring, "~> 1.7"},
+      {:credo, "~> 1.7"}
     ]
   end
 end
