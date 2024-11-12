@@ -482,27 +482,19 @@ Où en sommes nous?
 - on a une perte de performance à chaque appel sur une clé non hydratée. Cette perte ira diminuant avec la réhydratation du noeud
 - et une perte de performance quand le cache est interrogé sur une clé normalement absente (qui n'a pas été positionnée auparavant). En effet, il faut que 2 noeuds se concertent pour répondre "on n'a pas cela en magasin".
 
-# Hydratation au démarrage
+## Hydratation au démarrage
 
-Maintenant que l'on s'est fait la main, et en complément, regardons si l'on ne peut pas améliorer notre système d'hydratation au démarrage. Vous vous souvenez que l'on demandait à tous les noeuds de tous les groupes d'envoyer en une fois les données. Là, nous allons demander à un noeud aléatoire de chaque groupe d'envoyer un petit paquet de données. A la réception, on demandera un autre paquet, et ainsi de suite jusqu'à épuisement du stock. Cela nécessite de se souvenir de l'état de ce processus.
-
-On ajoute `hydration` pour suivre ce processus, et une constante pour la taille des paquets:
-```elixir
-  @batch_size 100
-  defstruct cache: %{}, pending_gets: [], hydration: nil
-```
+Maintenant que l'on s'est fait la main, et en complément, regardons si l'on ne peut pas améliorer notre système d'hydratation au démarrage. Vous vous souvenez que l'on demandait à tous les noeuds de tous les groupes d'envoyer en une fois les données. Là, nous allons demander à un noeud aléatoire de chaque groupe d'envoyer un petit paquet de données. A la réception, on demandera un autre paquet, et ainsi de suite jusqu'à épuisement du stock. 
 
 Au démarrage du noeud, on lance les demandes:
 ```elixir 
   def init(_args) do
     peers = pick_a_live_node_in_each_group()
     for {group, peer} <- peers, do: ask_for_hydration(peer, group, 0, @batch_size)
-
-    starting_indexes = for {g, _} <- peers, into: %{}, do: {g, 0}
-    {:ok, %__MODULE__{hydration: starting_indexes}}
+    {:ok, %__MODULE__{}}
   end
 ```
-`ask_for_hyration` est la demande de paquet de données. Elle signifie "donne moi un paquet de données de taille `@batch_size`, à partir de l'indice `0`, au titre du groupe `group`". Et `hydration` contient, pour chaque groupe, l'indice de données où l'on en est. 
+`ask_for_hyration` est la demande de paquet de données. Elle signifie "donne moi un paquet de données de taille `@batch_size`, à partir de l'indice `0`, au titre du groupe `group`".
 
 La fonction `pick_a_live_node_in_each_group` fait ce que son nom indique. Il y a une petite astuce pour ne retenir qu'un noeud par groupe. 
 
@@ -523,14 +515,15 @@ On utilise des `cast` pour les requêtes et réponses.
   end
 ```
 
-A la réception, le noeud va ordonner ses clés (uniquement celle du groupe demandé) et utiliser cet ordre pour les numéroter renvoyer un paquet. Il renvoie un drapeau particulier pour indiquer que c'est le dernier paquet, ce qui permettra au noeud appelant de s'arrêter de le solliciter.
+A la réception, le noeud va ordonner ses clés (uniquement celle du groupe demandé) et utiliser cet ordre pour les numéroter renvoyer un paquet. Il renvoie le prochain index et un drapeau pour indiquer que c'est le dernier paquet, ce qui permettra au noeud appelant de s'arrêter de le solliciter. 
 ```elixir
   def handle_cast({:i_am_thirsty, group, from, start_index, batch_size}, %{cache: cache} = state) do
     filtered_on_group = Map.filter(cache, fn {k, _} -> key_to_group_number(k) == group end)
+
     keys = filtered_on_group |> Map.keys() |> Enum.sort() |> Enum.slice(start_index, batch_size)
     filtered = for k <- keys, into: %{}, do: {k, filtered_on_group[k]}
 
-    hydrate(from, group, filtered, length(keys) < batch_size)
+    hydrate(from, group, filtered, start_index + map_size(filtered), length(keys) < batch_size)
 
     {:noreply, state}
   end
@@ -538,31 +531,51 @@ A la réception, le noeud va ordonner ses clés (uniquement celle du groupe dema
 
 Le `hydrate` est aussi un `cast`
 ```elixir
-  def hydrate(peer_pid, group, cache_slice, last_batch) do
-    GenServer.cast(peer_pid, {:drink, group, cache_slice, last_batch})
+  def hydrate(peer_pid, group, cache_slice, next_index, last_batch) do
+    GenServer.cast(peer_pid, {:drink, group, cache_slice, next_index, last_batch})
   end
 ```
 
-A la réception, beaucoup de choses se passent. On rappelle que l'on reçoit un paquet de donnée au titre d'un groupe.
+A la réception:
 ```elixir
-  def handle_cast({:drink, group, payload, final},  %{cache: cache, hydration: hydration} = state) do   
-
-    new_hydration =
-      if final do
-        Map.delete(hydration, group)
-      else
-        batch_size = map_size(payload)
-        start_index = hydration[group]
-        peer = pick_a_live_node_in_each_group() |> Map.get(group)
-        ask_for_hydration(peer, group, start_index + batch_size, @batch_size)
-        Map.put(hydration, group, start_index + batch_size)
-      end
+  def handle_cast({:drink, group, payload, next_index, final}, %{cache: cache} = state) do
+    if not final do
+      peer = pick_a_live_node_in_each_group() |> Map.get(group)
+      ask_for_hydration(peer, group, next_index, @batch_size)
+    end
 
     filtered_payload = Map.filter(payload, fn {k, _} -> not Map.has_key?(cache, k) end)
-    {:noreply, %{state | cache: Map.merge(cache, filtered_payload), hydration: new_hydration}}
+    {:noreply, %{state | cache: Map.merge(cache, filtered_payload)}}
   end
 ```
-Si l'on n'a pas terminé, on demande le paquet suivant à un replica au hasard et l'on met à jour `hydration` en conséquence. 
-Par ailleurs, on met à jour le cache en ne retenant que les clés inconnues parmi le paquet fourni.
+Si l'on n'a pas terminé, on demande le paquet suivant à un replica au hasard. Dans tous les cas on met à jour le cache, en ne retenant que les clés inconnues parmi le paquet fourni.
 
-Une remarque: on aurait pu se passer de `hydration`
+Testons. Dans un terminal ` ./scripts/start_cluster.sh` et dans l'autre:
+```
+% ./scripts/start_master.sh
+iex(master@127.0.0.1)1> Master.fill(1, 5000)
+:ok
+iex(master@127.0.0.1)2> Master.stat
+[{0, 2992}, {1, 2967}, {2, 3034}, {3, 3029}, {4, 2978}]
+iex(master@127.0.0.1)3> Master.kill(1)
+:ok
+iex(master@127.0.0.1)4> Master.stat
+[{0, 2992}, {1, {:badrpc, :nodedown}}, {2, 3034}, {3, 3029}, {4, 2978}]
+```
+
+On relance le noeud 1 dans un autre terminal `% ./scripts/start_instance.sh 1` et, dans "master", les clés sont revenues:
+```
+iex(master@127.0.0.1)5> Master.stat
+[{0, 2992}, {1, 2967}, {2, 3034}, {3, 3029}, {4, 2978}]
+```
+
+Petit bilan:
+- on a une gentille remontée en charge du noeud à son retour, sans dégrader trop les performances du cluster
+- le processus est assez fragile car une perte de message l'arrête définitivement. A vrai dire, notre première version était plus complexe et l'état du processus de remontée en charge était suivi par le noeud lui-même, ouvrant la possiblité de reprise sur erreur. Ca n'est pas compliqué à implémenter
+- le système d'itération (`keys = filtered_on_group |> Map.keys() |> Enum.sort() |> Enum.slice(start_index, batch_size)`) est à revoir dans les cas de caches de grande taille.
+
+Le plus important: a-t-on bien des états cohérents entre les noeuds du même groupe ? En effet, le cluster continue de vivre, notamment des `put` surviennent pendant le processus d'hydratation. Pas facile de l'assurer car les scénarios sont multiples. Par exemple:
+- si une clé est ajoutée parmi les paquets non encore envoyés, ça n'est pas problématique. Elle fera partie des paquets suivants. Et là, on a deux cas: soit le `put` a déjà atteint le noeud qui remonte et la clé sera ignorée à la réception, soit la clé sera mise à jour par la réception du paquet, puis mise à jour par le message du `put`. 
+- si une clé est ajoutée parmi les clés déjà reçue, ça n'est pas problématique non plus. Le `put` modifiera la valeur dans le cache. Et comme il y a décalage des clés ordonnées, on renverra une clé déjà envoyée au prochain paquet, ce qui n'est n'a pas d'impact sur la cohérence. 
+
+Ce qu'il faut retenir de cette analyse partielle (et peut-être inexacte), c'est qu'elle est difficile à mener. Il faut envisager tous les scénarios d'arrivées de message sur chacun de processus, sans surtout préjuger d'un ordre logique ou chronologique, et examiner si la cohérence du cache est endommagée dans chacun des scénarios.

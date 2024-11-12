@@ -5,7 +5,7 @@ defmodule Apothik.Cache do
 
   @batch_size 100
 
-  defstruct cache: %{}, pending_gets: [], hydration: nil
+  defstruct cache: %{}, pending_gets: []
 
   #### Groups and Nodes
 
@@ -76,8 +76,8 @@ defmodule Apothik.Cache do
     )
   end
 
-  def hydrate(peer_pid, group, cache_slice, last_batch) do
-    GenServer.cast(peer_pid, {:drink, group, cache_slice, last_batch})
+  def hydrate(peer_pid, group, cache_slice, next_index, last_batch) do
+    GenServer.cast(peer_pid, {:drink, group, cache_slice, next_index, last_batch})
   end
 
   def stats(), do: GenServer.call(__MODULE__, :stats)
@@ -92,9 +92,7 @@ defmodule Apothik.Cache do
   def init(_args) do
     peers = pick_a_live_node_in_each_group()
     for {group, peer} <- peers, do: ask_for_hydration(peer, group, 0, @batch_size)
-
-    starting_indexes = for {g, _} <- peers, into: %{}, do: {g, 0}
-    {:ok, %__MODULE__{hydration: starting_indexes}}
+    {:ok, %__MODULE__{}}
   end
 
   @impl true
@@ -104,27 +102,19 @@ defmodule Apothik.Cache do
     keys = filtered_on_group |> Map.keys() |> Enum.sort() |> Enum.slice(start_index, batch_size)
     filtered = for k <- keys, into: %{}, do: {k, filtered_on_group[k]}
 
-    hydrate(from, group, filtered, length(keys) < batch_size)
+    hydrate(from, group, filtered, start_index + map_size(filtered), length(keys) < batch_size)
 
     {:noreply, state}
   end
 
-  def handle_cast({:drink, group, payload, final}, state) do
-    %{cache: cache, hydration: hydration} = state
-
-    new_hydration =
-      if final do
-        Map.delete(hydration, group)
-      else
-        batch_size = map_size(payload)
-        start_index = hydration[group]
-        peer = pick_a_live_node_in_each_group() |> Map.get(group)
-        ask_for_hydration(peer, group, start_index + batch_size, @batch_size)
-        Map.put(hydration, group, start_index + batch_size)
-      end
+  def handle_cast({:drink, group, payload, next_index, final}, %{cache: cache} = state) do
+    if not final do
+      peer = pick_a_live_node_in_each_group() |> Map.get(group)
+      ask_for_hydration(peer, group, next_index, @batch_size)
+    end
 
     filtered_payload = Map.filter(payload, fn {k, _} -> not Map.has_key?(cache, k) end)
-    {:noreply, %{state | cache: Map.merge(cache, filtered_payload), hydration: new_hydration}}
+    {:noreply, %{state | cache: Map.merge(cache, filtered_payload)}}
   end
 
   def handle_cast({:put_as_replica, k, v}, %{cache: cache} = state) do
