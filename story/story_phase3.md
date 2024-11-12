@@ -29,7 +29,7 @@ end
 
 defp groups_of_a_node(node_number) do
 n = Cluster.static_nb_nodes()
-[node_number, rem(node_number - 1, n), rem(node_number - 2, n)]
+[node_number, rem(node_number - 1 + n, n), rem(node_number - 2 + n, n)]
 end
 ```
 Petite parenthèse, nous avons adapté le code de `Apothik.Cluster`. Voici les éléments principaux: 
