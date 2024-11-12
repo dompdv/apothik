@@ -581,7 +581,7 @@ Que se passe-t-il dans les mémoires des serveurs? Les clés de `apothik_2` on b
 
 ### Irruption du "Hash ring" 
 
-Une remarque: nous avons conçu notre système de redistribution de token sans trop y réfléchir. Nous soupçonnons d'abord qu'il pourrait dériver (c'est à dire que l'on pourrait s'éloigner d'une répartition équitable. En tout cas, cela reste à terster). Mais surtout, nous nous doutons bien qu'il doit y avoir une approche optimale de distribution des tokens pour garantir un minimum de changements.
+Une remarque: nous avons conçu notre système de redistribution de tokens sans trop y réfléchir. Nous soupçonnons d'abord qu'il pourrait dériver (c'est à dire que l'on pourrait s'éloigner d'une répartition équitable. En tout cas, cela reste à tester). Mais surtout, nous nous doutons bien qu'il doit y avoir une approche optimale de distribution des tokens pour garantir un minimum de changements.
 
 C'est typiquement le moment où l'on se dit : "Je découvre un domaine et je bute sur une question bien compliquée. Des gens plus intelligents ont déjà réfléchi au problème et mis cela dans une librairie". Nous n'avons pas touvé la réponse, mais au moins, nous comprenons un peu la question !
 
@@ -628,4 +628,4 @@ C'est plus simple, n'est-ce-pas ? Bon, pas sûr que notre idée d'utiliser `ets`
 
 ###  Petit récapitulatif de la phase 2:
 
-Nous avons un système distribué qui réagit automatiquement aux arrivées et départs de noeuds dans le cluster. Nous avons aussi amélioré la solution initiale pour le rendre moins sensible aux changements du cluster (arrivée et départs de noeuds). Au passage, notre solution n'est plus sensible au nom du noeud (tout noeud dont le nom commence par `apothik` peut rejoindre le cluster).
+Nous avons un système distribué qui réagit automatiquement aux arrivées et départs de noeuds dans le cluster. Nous avons aussi amélioré la solution initiale pour le rendre moins sensible aux changements (arrivée et départs de noeuds). Au passage, notre solution n'est plus sensible au nom du noeud (tout noeud dont le nom commence par `apothik` peut rejoindre le cluster).

@@ -482,3 +482,87 @@ Où en sommes nous?
 - on a une perte de performance à chaque appel sur une clé non hydratée. Cette perte ira diminuant avec la réhydratation du noeud
 - et une perte de performance quand le cache est interrogé sur une clé normalement absente (qui n'a pas été positionnée auparavant). En effet, il faut que 2 noeuds se concertent pour répondre "on n'a pas cela en magasin".
 
+# Hydratation au démarrage
+
+Maintenant que l'on s'est fait la main, et en complément, regardons si l'on ne peut pas améliorer notre système d'hydratation au démarrage. Vous vous souvenez que l'on demandait à tous les noeuds de tous les groupes d'envoyer en une fois les données. Là, nous allons demander à un noeud aléatoire de chaque groupe d'envoyer un petit paquet de données. A la réception, on demandera un autre paquet, et ainsi de suite jusqu'à épuisement du stock. Cela nécessite de se souvenir de l'état de ce processus.
+
+On ajoute `hydration` pour suivre ce processus, et une constante pour la taille des paquets:
+```elixir
+  @batch_size 100
+  defstruct cache: %{}, pending_gets: [], hydration: nil
+```
+
+Au démarrage du noeud, on lance les demandes:
+```elixir 
+  def init(_args) do
+    peers = pick_a_live_node_in_each_group()
+    for {group, peer} <- peers, do: ask_for_hydration(peer, group, 0, @batch_size)
+
+    starting_indexes = for {g, _} <- peers, into: %{}, do: {g, 0}
+    {:ok, %__MODULE__{hydration: starting_indexes}}
+  end
+```
+`ask_for_hyration` est la demande de paquet de données. Elle signifie "donne moi un paquet de données de taille `@batch_size`, à partir de l'indice `0`, au titre du groupe `group`". Et `hydration` contient, pour chaque groupe, l'indice de données où l'on en est. 
+
+La fonction `pick_a_live_node_in_each_group` fait ce que son nom indique. Il y a une petite astuce pour ne retenir qu'un noeud par groupe. 
+
+```elixir
+  def pick_a_live_node_in_each_group() do
+    me = Node.self() |> Cluster.number_from_node_name()
+    for g <- groups_of_a_node(me), peer <- nodes_in_group(g), peer != me, alive?(peer), into: %{}, do: {g, peer}
+  end
+```
+
+On utilise des `cast` pour les requêtes et réponses.
+```elixir
+  def ask_for_hydration(replica, group, start_index, batch_size) do
+    GenServer.cast(
+      {__MODULE__, Cluster.node_name(replica)},
+      {:i_am_thirsty, group, self(), start_index, batch_size}
+    )
+  end
+```
+
+A la réception, le noeud va ordonner ses clés (uniquement celle du groupe demandé) et utiliser cet ordre pour les numéroter renvoyer un paquet. Il renvoie un drapeau particulier pour indiquer que c'est le dernier paquet, ce qui permettra au noeud appelant de s'arrêter de le solliciter.
+```elixir
+  def handle_cast({:i_am_thirsty, group, from, start_index, batch_size}, %{cache: cache} = state) do
+    filtered_on_group = Map.filter(cache, fn {k, _} -> key_to_group_number(k) == group end)
+    keys = filtered_on_group |> Map.keys() |> Enum.sort() |> Enum.slice(start_index, batch_size)
+    filtered = for k <- keys, into: %{}, do: {k, filtered_on_group[k]}
+
+    hydrate(from, group, filtered, length(keys) < batch_size)
+
+    {:noreply, state}
+  end
+```
+
+Le `hydrate` est aussi un `cast`
+```elixir
+  def hydrate(peer_pid, group, cache_slice, last_batch) do
+    GenServer.cast(peer_pid, {:drink, group, cache_slice, last_batch})
+  end
+```
+
+A la réception, beaucoup de choses se passent. On rappelle que l'on reçoit un paquet de donnée au titre d'un groupe.
+```elixir
+  def handle_cast({:drink, group, payload, final},  %{cache: cache, hydration: hydration} = state) do   
+
+    new_hydration =
+      if final do
+        Map.delete(hydration, group)
+      else
+        batch_size = map_size(payload)
+        start_index = hydration[group]
+        peer = pick_a_live_node_in_each_group() |> Map.get(group)
+        ask_for_hydration(peer, group, start_index + batch_size, @batch_size)
+        Map.put(hydration, group, start_index + batch_size)
+      end
+
+    filtered_payload = Map.filter(payload, fn {k, _} -> not Map.has_key?(cache, k) end)
+    {:noreply, %{state | cache: Map.merge(cache, filtered_payload), hydration: new_hydration}}
+  end
+```
+Si l'on n'a pas terminé, on demande le paquet suivant à un replica au hasard et l'on met à jour `hydration` en conséquence. 
+Par ailleurs, on met à jour le cache en ne retenant que les clés inconnues parmi le paquet fourni.
+
+Une remarque: on aurait pu se passer de `hydration`
