@@ -1,3 +1,7 @@
+---
+title: A la découverte des applications distribuées avec Elixir
+---
+
 # A la découverte des applications distribuées avec Elixir
 
 ## Pourquoi ?

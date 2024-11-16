@@ -1,3 +1,14 @@
-* [Phase 1](story_phase1.md)
-* [Phase 2](story_phase2.md)
-* [Phase 3](story_phase3.md)
+---
+layout: home
+---
+# Documents
+<ul>
+  {% for page in site.pages %}
+    {% if page.path contains 'stories/' %}
+      <li>
+        <a href="{{ page.url | relative_url }}">{{ page.title }}</a>
+      </li>
+    {% endif %}
+  {% endfor %}
+</ul>
+
