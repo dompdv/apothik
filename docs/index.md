@@ -2,7 +2,7 @@
 layout: home
 ---
 
-## La série d'articles:
+La série d'articles:
 
 <ul>
   {% for page in site.pages %}
