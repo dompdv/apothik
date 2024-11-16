@@ -42,11 +42,8 @@ Maintenant, demandons à une IA de nous faire un script de lancement de 5 machin
 ```bash
 #!/usr/bin/env bash
 
-# Number of instances
 NUM_INSTANCES=5
-
-# Application name
-APP_NAME="apothik"  # Replace with your application name
+APP_NAME="apothik"
 
 # Start an instance of the application
 start_instance() {
@@ -55,16 +52,13 @@ start_instance() {
 
   echo "Starting instance $instance_id with node $node_name..."
 
-  # Start the application using mix run
   # The node name and cookie need to be set for clustering
-  # Here, there is no cookie: the standard ~/.erlang.cookie file is automatically
-  # used (and generated if there is none)
+  # Here, there is no cookie: the standard ~/.erlang.cookie file is automatically used (and generated if there is none)
   elixir --name $node_name -S mix run --no-halt &
 }
 
 mix compile
 
-# Start each instance
 for i in $(seq 1 $NUM_INSTANCES); do
   start_instance $i
 done
@@ -138,8 +132,7 @@ Pas vraiment, quand on lance une machine virtuelle Erlang, elle est associée av
 lancées avec le même `cookie` peuvent se connecter entre elles. On peut specifier le cookie avec `--cookie`, mais si on ne le fait pas, le fichier
 `~/.erlang.cookie` est utilisé (et généré s'il n'existe pas). Comme on a lancé les machines du même utilisateur, elles avaient le même cookie.
 
-**Attention**, le cookie n'est qu'un moyen de partitionner les clusters sur un même réseau physique (pour déployer un cluster de dév sur la même machine qu'un cluster de qualification, par exemple). 
-Il ne protège pas des attaques malveillantes! Si le cluster est déployé sur un réseau public, il faudra adopter des mesures de sécurité supplémentaires : chiffrement inter-noeuds, authentification, etc.
+**Attention**, le cookie n'est qu'un moyen de partitionner les clusters sur un même réseau physique (pour déployer un cluster de dév sur la même machine qu'un cluster de qualification, par exemple). Il ne protège pas des attaques malveillantes! Si le cluster est déployé sur un réseau public, il faudra adopter des mesures de sécurité supplémentaires : chiffrement inter-noeuds, authentification, etc.
 
 ### Découverte automatique des noeuds entre eux
 
@@ -233,9 +226,7 @@ defmodule Apothik.Cache do
 
   # Implementation
   @impl true
-  def init(_args) do
-    {:ok, %{}}
-  end
+  def init(_args), do: {:ok, %{}}
 
   @impl true
   def handle_call({:get, k}, _from, state) do
@@ -243,13 +234,11 @@ defmodule Apothik.Cache do
   end
 
   def handle_call({:put, k, v}, _from, state) do
-    new_state = Map.put(state, k, v)
-    {:reply, :ok, new_state}
+    {:reply, :ok, Map.put(state, k, v)}
   end
 
   def handle_call({:delete, k}, _from, state) do
-    new_state = Map.delete(state, k)
-    {:reply, :ok, new_state}
+    {:reply, :ok, Map.delete(state, k)}
   end
 
   def handle_call(:stats, _from, state) do
