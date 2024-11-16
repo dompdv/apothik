@@ -1,5 +1,9 @@
 defmodule Master do
   @nb_nodes 5
+  def inside(i) do
+    :rpc.call(:"apothik_#{i}@127.0.0.1", :sys, :get_state, [Apothik.Cache])
+  end
+
   def stat(i) do
     :rpc.call(:"apothik_#{i}@127.0.0.1", Apothik.Cache, :stats, [])
   end

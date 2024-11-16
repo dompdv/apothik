@@ -3,7 +3,9 @@ defmodule Apothik.Cache do
   alias Apothik.Cluster
   require Logger
 
-  defstruct cache: %{}
+  @batch_size 100
+
+  defstruct cache: %{}, pending_gets: []
 
   #### Groups and Nodes
 
@@ -14,7 +16,7 @@ defmodule Apothik.Cache do
 
   defp groups_of_a_node(node_number) do
     n = Cluster.static_nb_nodes()
-    [node_number, rem(node_number - 1, n), rem(node_number - 2, n)]
+    [node_number, rem(node_number - 1 + n, n), rem(node_number - 2 + n, n)]
   end
 
   defp key_to_group_number(k), do: :erlang.phash2(k, Cluster.static_nb_nodes())
@@ -41,6 +43,17 @@ defmodule Apothik.Cache do
     end
   end
 
+  def pick_a_live_node_in_each_group() do
+    me = Node.self() |> Cluster.number_from_node_name()
+
+    for g <- groups_of_a_node(me),
+        peer <- nodes_in_group(g),
+        peer != me,
+        alive?(peer),
+        into: %{},
+        do: {g, peer}
+  end
+
   #### GenServer Interface
   def get(k) do
     alive_node = k |> key_to_group_number() |> pick_a_live_node() |> Cluster.node_name()
@@ -56,6 +69,17 @@ defmodule Apothik.Cache do
     GenServer.cast({__MODULE__, Cluster.node_name(replica)}, {:put_as_replica, k, v})
   end
 
+  def ask_for_hydration(replica, group, start_index, batch_size) do
+    GenServer.cast(
+      {__MODULE__, Cluster.node_name(replica)},
+      {:i_am_thirsty, group, self(), start_index, batch_size}
+    )
+  end
+
+  def hydrate(peer_pid, group, cache_slice, next_index, last_batch) do
+    GenServer.cast(peer_pid, {:drink, group, cache_slice, next_index, last_batch})
+  end
+
   def stats(), do: GenServer.call(__MODULE__, :stats)
 
   def update_nodes(_nodes), do: nil
@@ -66,33 +90,79 @@ defmodule Apothik.Cache do
 
   @impl true
   def init(_args) do
-    me = Node.self() |> Cluster.number_from_node_name()
-
-    for g <- groups_of_a_node(me), peer <- nodes_in_group(g), peer != me, alive?(peer) do
-      GenServer.cast({__MODULE__, Cluster.node_name(peer)}, {:i_am_thirsty, g, self()})
-    end
-
-    {:ok, %__MODULE__{cache: %{}}}
+    peers = pick_a_live_node_in_each_group()
+    for {group, peer} <- peers, do: ask_for_hydration(peer, group, 0, @batch_size)
+    {:ok, %__MODULE__{}}
   end
 
   @impl true
-  def handle_cast({:i_am_thirsty, group, from}, %{cache: cache} = state) do
+  def handle_cast({:i_am_thirsty, group, from, start_index, batch_size}, %{cache: cache} = state) do
     filtered_on_group = Map.filter(cache, fn {k, _} -> key_to_group_number(k) == group end)
-    GenServer.cast(from, {:drink, filtered_on_group})
+
+    keys = filtered_on_group |> Map.keys() |> Enum.sort() |> Enum.slice(start_index, batch_size)
+    filtered = for k <- keys, into: %{}, do: {k, filtered_on_group[k]}
+
+    hydrate(from, group, filtered, start_index + map_size(filtered), length(keys) < batch_size)
+
     {:noreply, state}
   end
 
-  def handle_cast({:drink, payload}, %{cache: cache} = state) do
-    {:noreply, %{state | cache: Map.merge(cache, payload)}}
+  def handle_cast({:drink, group, payload, next_index, final}, %{cache: cache} = state) do
+    if not final do
+      peer = pick_a_live_node_in_each_group() |> Map.get(group)
+      ask_for_hydration(peer, group, next_index, @batch_size)
+    end
+
+    filtered_payload = Map.filter(payload, fn {k, _} -> not Map.has_key?(cache, k) end)
+    {:noreply, %{state | cache: Map.merge(cache, filtered_payload)}}
   end
 
   def handle_cast({:put_as_replica, k, v}, %{cache: cache} = state) do
     {:noreply, %{state | cache: Map.put(cache, k, v)}}
   end
 
+  def handle_cast({:hydrate_key, from, k}, %{cache: cache} = state) do
+    :ok = GenServer.cast(from, {:drink_key, k, cache[k]})
+    {:noreply, state}
+  end
+
+  def handle_cast({:drink_key, k, v}, state) do
+    %{cache: cache, pending_gets: pending_gets} = state
+
+    {to_reply, new_pending_gets} =
+      Enum.split_with(pending_gets, fn {hk, _} -> k == hk end)
+
+    Enum.each(to_reply, fn {_, client} -> GenServer.reply(client, v) end)
+
+    new_cache =
+      case Map.get(cache, k) do
+        nil -> Map.put(cache, k, v)
+        _ -> cache
+      end
+
+    {:noreply, %{state | cache: new_cache, pending_gets: new_pending_gets}}
+  end
+
   @impl true
-  def handle_call({:get, k}, _from, %{cache: cache} = state) do
-    {:reply, Map.get(cache, k), state}
+  def handle_call({:get, k}, from, state) do
+    %{cache: cache, pending_gets: pending_gets} = state
+
+    case Map.get(cache, k) do
+      nil ->
+        peer =
+          k
+          |> key_to_group_number()
+          |> live_nodes_in_a_group()
+          |> Enum.reject(fn i -> Cluster.node_name(i) == Node.self() end)
+          |> Enum.random()
+
+        :ok = GenServer.cast({__MODULE__, Cluster.node_name(peer)}, {:hydrate_key, self(), k})
+
+        {:noreply, %{state | pending_gets: [{k, from} | pending_gets]}}
+
+      val ->
+        {:reply, val, state}
+    end
   end
 
   def handle_call({:put, k, v}, _from, %{cache: cache} = state) do
