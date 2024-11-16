@@ -2,5 +2,6 @@
 
 lorem ipsum dolor sit amet, consectet.
 
-Suiter
+Suite 1
 
+Suite 2
