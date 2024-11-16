@@ -1,7 +1,10 @@
 ---
 layout: home
 ---
-# Documents
+# A la découverte des applications distribuées avec Elixir
+
+### La série d'articles:
+
 <ul>
   {% for page in site.pages %}
     {% if page.path contains 'stories/' %}
