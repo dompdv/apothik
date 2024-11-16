@@ -1,21 +1,3 @@
 # Apothik
 
-**TODO: Add description**
-
-## Installation
-
-If [available in Hex](https://hex.pm/docs/publish), the package can be installed
-by adding `apothik` to your list of dependencies in `mix.exs`:
-
-```elixir
-def deps do
-  [
-    {:apothik, "~> 0.1.0"}
-  ]
-end
-```
-
-Documentation can be generated with [ExDoc](https://github.com/elixir-lang/ex_doc)
-and published on [HexDocs](https://hexdocs.pm). Once published, the docs can
-be found at <https://hexdocs.pm/apothik>.
-
+This repository has been created to explore distributed applications development together with [Olb17](https://github.com/olb17).
