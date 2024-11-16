@@ -15,7 +15,7 @@ defmodule Apothik.MixProject do
   def application do
     [
       extra_applications: [:logger],
-      mod: {Apothik.Application, []}
+      mod: {Apothik.Application, Mix.env() == :test}
     ]
   end
 
