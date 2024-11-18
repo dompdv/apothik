@@ -5,7 +5,7 @@ defmodule Apothik.Application do
 
   @impl true
   def start(_type, _args) do
-    hosts = Apothik.Cluster.node_list()
+    hosts = Apothik.Cache.node_list()
 
     topologies = [
       apothik_cluster_1: [
@@ -16,8 +16,7 @@ defmodule Apothik.Application do
 
     children = [
       {Cluster.Supervisor, [topologies, [name: Apothik.ClusterSupervisor]]},
-      Apothik.Cluster,
-      Apothik.Cache
+      Apothik.Crdt
     ]
 
     Supervisor.start_link(children, strategy: :one_for_one, name: Apothik.Supervisor)

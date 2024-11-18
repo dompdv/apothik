@@ -5,7 +5,7 @@ defmodule Master do
   end
 
   def stat(i) do
-    :rpc.call(:"apothik_#{i}@127.0.0.1", Apothik.Cache, :stats, [])
+    :rpc.call(:"apothik_#{i}@127.0.0.1", Apothik.Crdt, :stats, [])
   end
   def get_tokens(i) do
     :rpc.call(:"apothik_#{i}@127.0.0.1", Apothik.Cache, :get_tokens, [])
