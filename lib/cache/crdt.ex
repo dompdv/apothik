@@ -25,7 +25,7 @@ defmodule Apothik.Crdt do
 
     children =
       for g <- groups do
-        %{id: "apothik_cache_#{g}", start: {Apothik.Cache, :start_link, [g]}}
+        Supervisor.child_spec({Apothik.Cache, g}, id: "apothik_cache_#{g}")
       end
 
     Supervisor.init(children, strategy: :one_for_one)
