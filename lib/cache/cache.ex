@@ -10,6 +10,7 @@ defmodule Apothik.Cache do
   def static_nb_nodes(), do: @nb_nodes
 
   def node_name(i), do: @hosts[i]
+  def crdt_name(i), do: :"apothik_crdt_#{i}"
 
   def number_from_node_name(node) do
     Enum.find(@hosts, fn {_, v} -> v == node end) |> elem(0)
@@ -72,22 +73,59 @@ defmodule Apothik.Cache do
 
   def start_link(args), do: GenServer.start_link(__MODULE__, args)
 
+  def set_neighbours(state) do
+    my_name = crdt_name(state.group)
+    self = number_from_node_name(Node.self())
+
+    neighbours =
+      for n <- nodes_in_group(state.group), n != self do
+        {my_name, node_name(n)}
+      end
+
+    :ok = DeltaCrdt.set_neighbours(state.pid, neighbours)
+
+    Logger.debug(
+      "Setting neighbours for #{state.group} on node #{self} with neighbours #{inspect(neighbours)}"
+    )
+
+    state
+  end
+
   #### Implementation
 
   @impl true
   def init(g) do
-    my_name = :"apothik_crdt_#{g}"
-    {:ok, pid} = DeltaCrdt.start_link(DeltaCrdt.AWLWWMap, name: my_name)
+    {:ok, pid} =
+      DeltaCrdt.start_link(DeltaCrdt.AWLWWMap,
+        max_sync_size: 30_000,
+        # max_sync_size: 500,
+        name: crdt_name(g)
+      )
 
-    self = number_from_node_name(Node.self())
+    state =
+      %{group: g, pid: pid}
+      |> set_neighbours()
 
-    neighbours =
-      for n <- nodes_in_group(g), n != self do
-        {my_name, node_name(n)}
-      end
+    Logger.debug("Starting cache #{state.group} on node #{Node.self()}")
 
-    DeltaCrdt.set_neighbours(pid, neighbours)
-    Logger.debug("Starting cache #{g} on node #{self}")
-    {:ok, nil}
+    :net_kernel.monitor_nodes(true)
+    {:ok, state}
+  end
+
+  @impl true
+  def handle_info({:nodeup, node}, state) do
+    Logger.debug("Node up #{inspect(node)}")
+
+    Task.start(fn ->
+      Process.sleep(5_000)
+      set_neighbours(state)
+    end)
+
+    {:noreply, state}
+  end
+
+  def handle_info({:nodedown, node}, state) do
+    Logger.debug("Node down #{inspect(node)}")
+    {:noreply, state}
   end
 end

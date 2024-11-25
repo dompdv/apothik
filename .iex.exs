@@ -33,6 +33,9 @@ defmodule Master do
   def sum() do
     (for {_,s} <- stat(), is_integer(s), do: s) |> Enum.sum()
   end
+  def sum_stat() do
+    {sum(), stat()}
+  end
 
   def kill(i) do
     :rpc.call(:"apothik_#{i}@127.0.0.1", System, :stop, [0])
