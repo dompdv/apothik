@@ -1,14 +1,10 @@
----
-title: Ajout de redondance de stockage pour garantir la conservation des données malgré la perte de machine
----
-# A la découverte des applications distribuées avec Elixir
-## Phase 3 : Ajout de redondance de stockage pour garantir la conservation des données malgré la perte de machine
+# Phase 3 : Ajout de redondance de stockage pour garantir la conservation des données malgré la perte de machine
 
 Soyons honnêtes, le contenu de cette phase a été choisi au départ de notre aventure, sans connaître le sujet. En réalité, nous avons bien senti la grande différence de difficulté en l'abordant. Jusqu'ici, les choses semblaient relativement faciles, même si nous sommes conscients que nous sommes probablement passés à côté de difficultés nombreuses qui ne manqueraient pas d'apparaître dans un vrai contexte de production. Mais, reconnaissons le, nous n'avons eu jusqu'à présent qu'à rajouter une petite couche de code qui tire parti des possibilités toutes faites fournies par la BEAM.
 
 Nous n'allons pas raconter toutes nos tentatives et nos errements car ce serait long et fastidieux, mais plutôt tenter de présenter un chemin de découverte du problème (pas forcément de la solution, d'ailleurs) qui soit passablement linéaire.
 
-### Redondance, vous avez dit redondance ?
+## Redondance, vous avez dit redondance ?
 
 Notre approche est un peu naïve : si on stocke plusieurs fois la données (redondance), on se dit intuitivement qu'on doit pouvoir la retrouver en cas de perte d'un noeud. 
 
@@ -576,3 +572,32 @@ Le plus important: a-t-on bien des états cohérents entre les noeuds du même g
 - si une clé est ajoutée parmi les clés déjà reçue, ça n'est pas problématique non plus. Le `put` modifiera la valeur dans le cache. Et comme il y a décalage des clés ordonnées, on renverra une clé déjà envoyée au prochain paquet, ce qui n'est n'a pas d'impact sur la cohérence. 
 
 Ce qu'il faut retenir de cette analyse partielle (et peut-être inexacte), c'est qu'elle est difficile à mener. Il faut envisager tous les scénarios d'arrivées de message sur chacun des processus, sans surtout préjuger d'un ordre logique ou chronologique, et examiner si la cohérence du cache est endommagée dans chacun des scénarios.
+
+## Et si on faisait appel à des experts ?
+
+Nous ne pouvons pas nous départir de l'idée que nous avons probablement trouvé des solutions assez frustres à des questions bien compliquées. 
+
+Comme précédemment, c'est le moment de chercher ce que des gens bien plus experts ont trouvé. La bonne nouvelle, c'est que cela existe, c'est le CRDT (Conflict-free replicated data type). Il s'agit de toute une famille de solutions qui permettent de synchroniser des états dans une configuration distribuée. Une recherche rapide sur internet parle même de "cohérence éventuelle". C'est à dire que, si on ne touche plus au cache, les noeuds vont converger vers le même état au bout d'un certain temps.
+
+Bon, nous ne comprenons pas tout en détail, mais nous savons que l'excellent [Derek Kraan](https://github.com/derekkraan) a notamment écrit une librairie qui implémente une variante (les delta-CRDT) pour les besoins de [Horde](https://github.com/derekkraan/horde), une application de supervision et de registre distribuée.
+
+La librairie est [delta_crdt_ex](https://github.com/derekkraan/delta_crdt_ex). Le README est carrément alléchant ! Voici l'exemple de la documentation:
+
+```elixir
+{:ok, crdt1} = DeltaCrdt.start_link(DeltaCrdt.AWLWWMap)
+{:ok, crdt2} = DeltaCrdt.start_link(DeltaCrdt.AWLWWMap)
+DeltaCrdt.set_neighbours(crdt1, [crdt2])
+DeltaCrdt.set_neighbours(crdt2, [crdt1])
+DeltaCrdt.to_map(crdt1)
+%{}
+DeltaCrdt.put(crdt1, "CRDT", "is magic!")
+Process.sleep(300) # need to wait for propagation
+DeltaCrdt.to_map(crdt2)
+%{"CRDT" => "is magic!"}
+```
+
+ Le `DeltaCrdt` est exactement ce que nous voulons: un dictionnaire ! Il suffit de lancer des process `DeltaCrdt`. On présente ses voisins à chaque process. Attention, le lien est monodirectionnel, donc il faut présenter 1 à 2 et 2 à 1.
+
+Bref, il semble que nous allons surtout beaucoup supprimer du code. Et en effet, c'est que nous allons faire !
+
+## 
