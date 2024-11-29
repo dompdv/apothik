@@ -19,7 +19,7 @@ Parce que le sujet est difficile, nous ne pouvions pas sauter directement sur no
 - *Phase 1 :* Un Cache distribué, sans redondance, sur 5 machines fixes.
 - *Phase 2 :* Même chose, mais avec un cluster dynamique (ajout et perte de machine). Explorer l'influence des fonctions de répartition des clés.
 - *Phase 3 :* Ajout de redondance de stockage (la clé est recopiée sur plusieurs machines) pour garantir la conservation des données malgré la perte de machine. Gérer un cluster dynamique et des pannes
-- *Phase 4 :* Si on arrive là, on peut se rapprocher de l'idée d'une base de données: conservation d'un état sur un cluster dynamique sans perte de données et avec une garantie d'atomicité sur les changements. 
+- *Phase 4 :* Tester tout cela
 
 Et bien sûr, cela implique de développer des petits outils annexes pour procéder aux expériences: charger le cache, observer l'état des machines, ajouter ou supprimer des machines, etc
 
@@ -45,7 +45,6 @@ Maintenant, demandons à une IA de nous faire un script de lancement de 5 machin
 NUM_INSTANCES=5
 APP_NAME="apothik"
 
-# Start an instance of the application
 start_instance() {
   local instance_id=$1
   local node_name="${APP_NAME}_${instance_id}@127.0.0.1"
@@ -78,11 +77,11 @@ Le `&`indique de le lancer sur un processus (un processus de l'OS) fils du scrip
 
 Nous avons dû ajouter `mix compile` en amont car le lancement en parallèle de plusieurs `mix run` pouvait lancer des compilations qui se marchaient sur les pieds.
 
-Un petit `chmod u+x ./scripts/start_cluster.sh` pour donner des droits d'execution au script bash, et vous pouvez lancer vos 5 machines `./scripts/start_cluster.sh` !
+Un petit `chmod u+x ./scripts/start_cluster.sh` pour donner des droits d'exécution au script bash, et vous pouvez lancer vos 5 machines `./scripts/start_cluster.sh` !
 
 ### Créer un cluster
 
-Pour l'instant, les 5 machines ne se connaissent pas, elles vivent leur vie indépendante l'une de l'autre. Pour former un cluster, il faut qu'elles se reconnaissent entre elles.
+Pour l'instant, les 5 machines ne se connaissent pas, elles vivent leur vie indépendantes l'une de l'autre. Pour former un cluster, il faut qu'elles se reconnaissent entre elles.
 Après avoir lancé vos machines dans un terminal, ouvrez un autre terminal et lancez `iex`.
 
 ```
@@ -229,21 +228,13 @@ defmodule Apothik.Cache do
   def init(_args), do: {:ok, %{}}
 
   @impl true
-  def handle_call({:get, k}, _from, state) do
-    {:reply, Map.get(state, k), state}
-  end
+  def handle_call({:get, k}, _from, state), do: {:reply, Map.get(state, k), state}
 
-  def handle_call({:put, k, v}, _from, state) do
-    {:reply, :ok, Map.put(state, k, v)}
-  end
+  def handle_call({:put, k, v}, _from, state), do: {:reply, :ok, Map.put(state, k, v)}
 
-  def handle_call({:delete, k}, _from, state) do
-    {:reply, :ok, Map.delete(state, k)}
-  end
+  def handle_call({:delete, k}, _from, state), do: {:reply, :ok, Map.delete(state, k)}
 
-  def handle_call(:stats, _from, state) do
-    {:reply, map_size(state), state}
-  end
+  def handle_call(:stats, _from, state), do: {:reply, map_size(state), state}
 end
 ```
 
