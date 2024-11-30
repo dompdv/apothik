@@ -342,7 +342,7 @@ Mais peut-être que nous pourrions nous concentrer sur les qualités attendues d
 
 Et c'est le principal morceau de sagesse que nous a procuré notre travail jusqu'ici. **Il faut avant tout préciser clairement les qualités attendues de l'application distribuée.**. Chaque qualité se payant très cher.
 
-A ce sujet, il nous revient  que nous avons lu un jour un fameux théorême qui explique qu'il est mathématiquement impossible **de tout avoir à la fois**: le [théorême CAP](https://en.wikipedia.org/wiki/CAP_theorem). Et ce ne doit pas le seul théorême d'impossibilité.
+A ce sujet, il nous revient que nous avons lu un jour un fameux théorême qui explique qu'il est mathématiquement impossible **de tout avoir à la fois**: le [théorême CAP](https://en.wikipedia.org/wiki/CAP_theorem). Et ce ne doit pas le seul théorême d'impossibilité.
 
 En application distribuée, "le beurre et l'argent du beurre" est encore plus inatteignable que d'habitude.
 
@@ -769,6 +769,8 @@ Magique! On a une propagation automatique sur tous les noeuds. Les totaux sont b
 
 Maintenant, tuons 2 noeuds si de la donnée est perdue:
 ```
+8> Master.kill(0)
+:ok
 9> Master.kill(1)
 :ok
 10> Master.sum_stat
