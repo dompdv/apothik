@@ -5,8 +5,12 @@ defmodule Master do
   end
 
   def stat(i) do
-    :rpc.call(:"apothik_#{i}@127.0.0.1", Apothik.Crdt, :stats, [])
+    :rpc.call(:"apothik_#{i}@127.0.0.1", Apothik.CrdtSupervisor, :stats, [])
   end
+  def sum_stat() do
+    {sum(), stat()}
+  end
+
   def get_tokens(i) do
     :rpc.call(:"apothik_#{i}@127.0.0.1", Apothik.Cache, :get_tokens, [])
   end
@@ -32,9 +36,6 @@ defmodule Master do
   end
   def sum() do
     (for {_,s} <- stat(), is_integer(s), do: s) |> Enum.sum()
-  end
-  def sum_stat() do
-    {sum(), stat()}
   end
 
   def kill(i) do

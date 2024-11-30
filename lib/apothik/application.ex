@@ -16,7 +16,7 @@ defmodule Apothik.Application do
 
     children = [
       {Cluster.Supervisor, [topologies, [name: Apothik.ClusterSupervisor]]},
-      Apothik.Crdt
+      Apothik.CrdtSupervisor
     ]
 
     Supervisor.start_link(children, strategy: :one_for_one, name: Apothik.Supervisor)

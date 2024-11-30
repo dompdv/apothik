@@ -218,23 +218,23 @@ end
 Vite, vérifions que ça marche. `./scripts/start_cluster.sh` dans un terminal, et faison dans un autre:
 ```
  % ./scripts/start_master.sh
-iex(master@127.0.0.1)1> Master.put(1, :a_key, 100)
+1> Master.put(1, :a_key, 100)
 :ok
-iex(master@127.0.0.1)2> Master.stat
+2> Master.stat
 [{0, 0}, {1, 1}, {2, 1}, {3, 1}, {4, 0}]
-iex(master@127.0.0.1)3> Master.get(3, :a_key)
+3> Master.get(3, :a_key)
 100
-iex(master@127.0.0.1)4> Master.put(2, :another_key, 200)
+4> Master.put(2, :another_key, 200)
 :ok
-iex(master@127.0.0.1)5> Master.get(3, :another_key)
+5> Master.get(3, :another_key)
 200
-iex(master@127.0.0.1)6> Master.stat
+6> Master.stat
 [{0, 1}, {1, 1}, {2, 1}, {3, 2}, {4, 1}]
-iex(master@127.0.0.1)7> Master.fill(1,5000)
+7> Master.fill(1,5000)
 :ok
-iex(master@127.0.0.1)8> Master.stat
+8> Master.stat
 [{0, 2993}, {1, 2968}, {2, 3035}, {3, 3031}, {4, 2979}]
-iex(master@127.0.0.1)9> Master.sum
+9> Master.sum
 15006
 ```
 
@@ -245,17 +245,17 @@ On voit bien que `:a_key` est sur 3 noeuds. On accède bien au cache de n'import
 Que se passe-t-il en cas de perte de noeud ? Eh bien, nous perdons les données, pardi !
 ```
 % ./scripts/start_master.sh
-iex(master@127.0.0.1)1> Master.fill(1,5000)
+1> Master.fill(1,5000)
 :ok
-iex(master@127.0.0.1)2> Master.kill(2)
+2> Master.kill(2)
 :ok
-iex(master@127.0.0.1)3> Master.stat
+3> Master.stat
 [  {0, 2992},  {1, 2967},  {2, {:badrpc, :nodedown}},  {3, 3029},  {4, 2978}]
 ```
 
 Dans un autre terminal, `./scripts/start_instance.sh 2` (oui, nous avons écrit un petit script équivalent à `elixir --name apothik_$1@127.0.0.1 -S mix run --no-halt`) et revenons dans le `master`:
 ```
-iex(master@127.0.0.1)4> Master.stat
+4> Master.stat
 [{0, 2992}, {1, 2967}, {2, 0}, {3, 3029}, {4, 2978}]
 ```
 `apothik_2` est bien vide comme prévu.
@@ -292,18 +292,18 @@ A la réception, c'est à dire à la réhydratation (`:drink`), on fusionne simp
 Est ce que ça marche? On relance le cluster, puis:
 ```
 % ./scripts/start_master.sh
-iex(master@127.0.0.1)1> Master.fill(1,5000)
+1> Master.fill(1,5000)
 :ok
-iex(master@127.0.0.1)2> Master.stat
+2> Master.stat
 [{0, 2992}, {1, 2967}, {2, 3034}, {3, 3029}, {4, 2978}]
-iex(master@127.0.0.1)3> Master.kill(2)
+3> Master.kill(2)
 :ok
-iex(master@127.0.0.1)4> Master.stat
+4> Master.stat
 [ {0, 2992},  {1, 2967},  {2, {:badrpc, :nodedown}},  {3, 3029},  {4, 2978}]
 ```
 et dans un autre terminal `% ./scripts/start_instance.sh 2`. Retour dans le `master`
 ```
-iex(master@127.0.0.1)5> Master.stat
+5> Master.stat
 [{0, 2992}, {1, 2967}, {2, 3034}, {3, 3029}, {4, 2978}]
 ```
 
@@ -433,28 +433,28 @@ Les étapes:
 Essayons, avec dans un terminal `./scripts/start_cluster.sh` et dans l'autre: 
 ```
 % ./scripts/start_master.sh
-iex(master@127.0.0.1)1> Master.put(4,"hello","world")
+1> Master.put(4,"hello","world")
 :ok
-iex(master@127.0.0.1)2> Master.stat
+2> Master.stat
 [{0, 1}, {1, 1}, {2, 0}, {3, 0}, {4, 1}]
-iex(master@127.0.0.1)3> Master.kill(0)
+3> Master.kill(0)
 :ok
-iex(master@127.0.0.1)4> Master.stat
+4> Master.stat
 [{0, {:badrpc, :nodedown}}, {1, 1}, {2, 0}, {3, 0}, {4, 1}]
 ```
 On tue le noeud 0 qui fait partie du groupe 4. Dans un autre terminal, on le relance `./scripts/start_instance.sh 0`, puis: 
 ```
-iex(master@127.0.0.1)5> Master.stat
+5> Master.stat
 [{0, 0}, {1, 1}, {2, 0}, {3, 0}, {4, 1}]
-iex(master@127.0.0.1)6> Master.get(4,"hello")
+6> Master.get(4,"hello")
 "world"
-iex(master@127.0.0.1)7> Master.stat
+7> Master.stat
 [{0, 0}, {1, 1}, {2, 0}, {3, 0}, {4, 1}]
-iex(master@127.0.0.1)8> Master.get(0,"hello")
+8> Master.get(0,"hello")
 "world"
-iex(master@127.0.0.1)9> Master.stat
+9> Master.stat
 [{0, 1}, {1, 1}, {2, 0}, {3, 0}, {4, 1}]
-iex(master@127.0.0.1)10> :rpc.call(:"apothik_0@127.0.0.1", :sys, :get_state, [Apothik.Cache]) 
+10> :rpc.call(:"apothik_0@127.0.0.1", :sys, :get_state, [Apothik.Cache]) 
 %{cache: %{"hello" => "world"}, __struct__: Apothik.Cache, pending_gets: []}
 ```
 
@@ -545,19 +545,19 @@ Si l'on n'a pas terminé, on demande le paquet suivant à un replica au hasard. 
 Testons. Dans un terminal ` ./scripts/start_cluster.sh` et dans l'autre:
 ```
 % ./scripts/start_master.sh
-iex(master@127.0.0.1)1> Master.fill(1, 5000)
+1> Master.fill(1, 5000)
 :ok
-iex(master@127.0.0.1)2> Master.stat
+2> Master.stat
 [{0, 2992}, {1, 2967}, {2, 3034}, {3, 3029}, {4, 2978}]
-iex(master@127.0.0.1)3> Master.kill(1)
+3> Master.kill(1)
 :ok
-iex(master@127.0.0.1)4> Master.stat
+4> Master.stat
 [{0, 2992}, {1, {:badrpc, :nodedown}}, {2, 3034}, {3, 3029}, {4, 2978}]
 ```
 
 On relance le noeud 1 dans un autre terminal `% ./scripts/start_instance.sh 1` et, dans "master", les clés sont revenues:
 ```
-iex(master@127.0.0.1)5> Master.stat
+5> Master.stat
 [{0, 2992}, {1, 2967}, {2, 3034}, {3, 3029}, {4, 2978}]
 ```
 
@@ -600,4 +600,213 @@ DeltaCrdt.to_map(crdt2)
 
 Bref, il semble que nous allons surtout beaucoup supprimer du code. Et en effet, c'est que nous allons faire !
 
-## 
+## Nommer les processus et les superviser
+
+Reprenons: nous avons divisé notre cache en groupes. Chaque groupe est présent sur 3 noeuds. Nous voudrions avoir 3 processus `DeltaCrdt` qui se synchronisent par groupe, chacun sur un noeud différent. Nous décidons de nommer les process liés au groupe `n`:  `apothik_crdt_#{n}`. Par exemple, le groupe `0` sera représenté par 3 process tous nommés `apothik_crdt_0` répartis sur 3 noeuds différents, `apothik_0`, `apothik_1` et `apothik_2`. Il est possible de présenter un voisin sans utiliser de `pid` mais en utilisant la convention `{nom du process, nom du noeud}`: 
+```elixir 
+  DeltaCrdt.set_neighbours(crdt, [{"apothik_crdt_0", :"apothik_1"}])
+```
+
+Au démarrage d'un noeud, il faut instancier 3 processus, un pour chaque groupe porté par le noeud. Nous décidons de faire porter cette responsibilité par un superviseur.
+
+```elixir
+defmodule Apothik.CrdtSupervisor do
+  use Supervisor
+
+  alias Apothik.Cache
+
+  def start_link(init_arg), do: Supervisor.start_link(__MODULE__, init_arg, name: __MODULE__)
+
+  @impl true
+  def init(_init_args) do
+    self = Cache.number_from_node_name(Node.self())
+    groups = Cache.groups_of_a_node(self)
+
+    children =
+      for g <- groups do
+        Supervisor.child_spec({Apothik.Cache, g}, id: "apothik_cache_#{g}")
+      end
+
+    Supervisor.init(children, strategy: :one_for_one)
+  end
+end
+```
+
+Attention, nous ne lançons pas directement un processus `DeltaCrdt` mais `{Apothik.Cache, g}`, nommé `apothik_cache_#{g}`. Nous y revenons ci-dessous.
+
+Et ce superviseur est lancé par l'application (qui lance `libcluster` aussi):
+```elixir
+defmodule Apothik.Application do
+use Application
+
+  @impl true
+  def start(_type, _args) do
+  (... same as before ...)
+
+    children = [
+      {Cluster.Supervisor, [topologies, [name: Apothik.ClusterSupervisor]]},
+      Apothik.CrdtSupervisor
+    ]
+
+    Supervisor.start_link(children, strategy: :one_for_one, name: Apothik.Supervisor)
+  end
+end
+```
+
+## Présenter les voisins au bon moment
+
+Nous devons présenter ses 2 partenaires de jeux à chaque `DeltaCrdt`. Pour insérer ce comportement, nous avons décidé de créer un processus intermédiaire (`Apothik.Cache`) dont la mission est d'instancier le `DeltaCrdt` et de lui présenter ses voisins. Leurs destins seront liés via l'usage de `start_link`. Ainsi, si le process `DeltaCrdt` se termine brusquement, le process `Cache` aussi et le superviseur le relancera.
+
+Cela donne:
+```elixir
+defmodule Apothik.Cache do
+  use GenServer
+
+  def crdt_name(i), do: :"apothik_crdt_#{i}"
+
+  @impl true
+  def init(g) do
+    :net_kernel.monitor_nodes(true)
+    {:ok, pid} =  DeltaCrdt.start_link(DeltaCrdt.AWLWWMap, name: crdt_name(g))
+    {:ok, set_neighbours(%{group: g, pid: pid})}
+  end
+
+  def set_neighbours(state) do
+    my_name = crdt_name(state.group)
+    self = number_from_node_name(Node.self())
+
+    neighbours = for n <- nodes_in_group(state.group), n != self, do:{my_name, node_name(n)}
+    DeltaCrdt.set_neighbours(state.pid, neighbours)
+
+    state
+  end
+end
+```
+
+D'ailleurs, pour plus de sûreté, nous devons aussi représenter les voisins dès qu'un noeud rejoint le cluster. Cela explique la présence de `:net_kernel.monitor_nodes(true)
+`. Nous ajoutons:
+```elixir
+  @impl true
+  def handle_info({:nodeup, node}, state) do
+    Task.start(fn ->
+      Process.sleep(1_000)
+      set_neighbours(state)
+    end)
+
+    {:noreply, state}
+  end
+
+  def handle_info({:nodedown, node}, state), do: {:noreply, state}
+```
+Nous avons ajouté un petit délai avant de positionner les voisins, pour laisser le noeud se mettre en route.
+
+## Changement de l'interface d'accès au cache
+
+Et finalement, les actions fondamentales (`get` et `put`) deviennent:
+```elixir
+  def get(k) do
+    group = k |> key_to_group_number()
+    alive_node = group |> pick_a_live_node() |> node_name()
+    DeltaCrdt.get({:"apothik_crdt_#{group}", alive_node}, k)
+  end
+
+  def put(k, v) do
+    group = k |> key_to_group_number()
+    alive_node = group |> pick_a_live_node() |> node_name()
+    DeltaCrdt.put({:"apothik_crdt_#{group}", alive_node}, k, v)
+  end
+```
+Comme d'habitude, la clé donne le groupe en charge. Puis on détermine un noeud du groupe en privilégiant le noeud en cours. Puis nous appelons directement le process `DeltaCrdt` à partir de son nom. Et le tour est joué.
+
+## Essayons
+
+Une petite modification d'abord pour récolter les statistiques, dans `Apothik.CrdtSupervisor` en appelant tous les `DeltaCrdt` des groupes du noeud
+```elixir
+def stats() do
+  self = Cache.number_from_node_name(Node.self())
+  groups = Cache.groups_of_a_node(self)
+
+  for g <- groups do
+    DeltaCrdt.to_map(:"apothik_crdt_#{g}") |> map_size()
+  end
+  |> Enum.sum()
+end
+````
+Et dans `.iex.exs`:
+```elixir
+def stat(i) do
+  :rpc.call(:"apothik_#{i}@127.0.0.1", Apothik.CrdtSupervisor, :stats, [])
+end
+def sum_stat() do
+  {sum(), stat()}
+end
+```
+
+Comme d'habitude, on lance `./scripts/start_cluster.sh` dans un terminal et dans un autre:
+```
+% ./scripts/start_master.sh
+1> Master.sum_stat
+{0, [{0, 0}, {1, 0}, {2, 0}, {3, 0}, {4, 0}]}
+2> Master.fill(1, 1)
+:ok
+3> Master.sum_stat
+{3, [{0, 0}, {1, 1}, {2, 1}, {3, 1}, {4, 0}]}
+4> Master.fill(1, 10)
+:ok
+5> Master.sum_stat
+{30, [{0, 7}, {1, 5}, {2, 5}, {3, 6}, {4, 7}]}
+6> Master.fill(1, 100)
+:ok
+7> Master.sum_stat
+{300, [{0, 60}, {1, 62}, {2, 66}, {3, 58}, {4, 54}]}
+```
+
+Magique! On a une propagation automatique sur tous les noeuds. Les totaux sont bien cohérents !
+
+Maintenant, tuons 2 noeuds si de la donnée est perdue:
+```
+9> Master.kill(1)
+:ok
+10> Master.sum_stat
+{178, [   {0, {:badrpc, :nodedown}}, {1, {:badrpc, :nodedown}}, {2, 66}, {3, 58}, {4, 54}]}
+```
+
+Et dans deux autres terminaux distinct: `% ./scripts/start_instance.sh 0`pour l'un et `% ./scripts/start_instance.sh 1` pour l'autre. Revenons:
+```
+11> Master.sum_stat
+{300, [{0, 60}, {1, 62}, {2, 66}, {3, 58}, {4, 54}]}
+```
+
+Et voilà ! Les clés sont revenues !
+
+
+## Ca marche, mais faut pas pousser !
+
+Recommençons à 0 la manipulation (on relance le cluster), et:
+```
+% ./scripts/start_master.sh
+1> Master.fill(1, 10000)
+:ok
+2> Master.sum_stat
+{18384, [{0, 3564}, {1, 2968}, {2, 3555}, {3, 4148}, {4, 4149}]}
+```
+
+Ouch ! On n'a pas du tout 30_000 clés comme attendu, mais 18_384. 
+
+Nous n'allons pas vous expliquer les quelques heures passées à essayer de comprendre ce qui se passe. Il suffit de dire que nous avons consulté internet, les "issues" du repository Github et bien sûr nous nous sommes plongés dans le code. Nous avons compris que  
+```elixir
+DeltaCrdt.start_link(DeltaCrdt.AWLWWMap, max_sync_size: 30_000, name: crdt_name(g))
+``` 
+permettait d'aller plus loin. Mais que la synchronisation était tronquée à un certain niveau. Bref, que si on n'avait de trop grosses différences ("delta") dans un temps donné, la propagation ne se faisait pas complètement. Utiliser de la magie, c'est génial tant que tout marche, ça devient de la magie noire quand quelque chose coince.
+
+## Conclusion générale
+
+Quand on fait le bilan, nous avons finalement deux solutions:
+- une solution un peu bricolée, ne traitant sans doute pas les cas compliqués, mais que nous maîtrisons parfaitement et pour laquelle nous avons déjà des pistes d'amélioration identifiées et faisables.
+- une solution faite par des experts, mais qui a des limites que nous ne maîtrisons pas à moins de devenir un peu (beaucoup ?) experts nous-même.
+
+Nous revenons à nouveau à la conclusion que faire des applications distribuées est très délicat, avec un effet de mur: un petit domaine de choses faisables est entouré de murs très hauts dès lors que l'on vise certaines qualités pour l'application distribuée. Il y a deux façons de franchir ces murs. Soit investir massivement en compréhension des algorithmes déjà inventées par de nombreux chercheurs et implémenter ces algorithmes selon son besoin. Soit s'appuyer sur des librairies ou des produits tout faits, mais alors il est indispensable d'en connaitre précisément les domaines de fonctionnement.
+
+Pour l'heure, essayons de tester notre solution de façon un peu plus extensive.
+
+Fin de la phase 3

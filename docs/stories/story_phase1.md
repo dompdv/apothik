@@ -1,7 +1,3 @@
----
-title: A la découverte des applications distribuées avec Elixir
----
-
 # A la découverte des applications distribuées avec Elixir
 
 ## Pourquoi ?
@@ -23,7 +19,7 @@ Parce que le sujet est difficile, nous ne pouvions pas sauter directement sur no
 - *Phase 1 :* Un Cache distribué, sans redondance, sur 5 machines fixes.
 - *Phase 2 :* Même chose, mais avec un cluster dynamique (ajout et perte de machine). Explorer l'influence des fonctions de répartition des clés.
 - *Phase 3 :* Ajout de redondance de stockage (la clé est recopiée sur plusieurs machines) pour garantir la conservation des données malgré la perte de machine. Gérer un cluster dynamique et des pannes
-- *Phase 4 :* Si on arrive là, on peut se rapprocher de l'idée d'une base de données: conservation d'un état sur un cluster dynamique sans perte de données et avec une garantie d'atomicité sur les changements. 
+- *Phase 4 :* Tester tout cela
 
 Et bien sûr, cela implique de développer des petits outils annexes pour procéder aux expériences: charger le cache, observer l'état des machines, ajouter ou supprimer des machines, etc
 
@@ -46,29 +42,22 @@ Maintenant, demandons à une IA de nous faire un script de lancement de 5 machin
 ```bash
 #!/usr/bin/env bash
 
-# Number of instances
 NUM_INSTANCES=5
+APP_NAME="apothik"
 
-# Application name
-APP_NAME="apothik"  # Replace with your application name
-
-# Start an instance of the application
 start_instance() {
   local instance_id=$1
   local node_name="${APP_NAME}_${instance_id}@127.0.0.1"
 
   echo "Starting instance $instance_id with node $node_name..."
 
-  # Start the application using mix run
   # The node name and cookie need to be set for clustering
-  # Here, there is no cookie: the standard ~/.erlang.cookie file is automatically
-  # used (and generated if there is none)
+  # Here, there is no cookie: the standard ~/.erlang.cookie file is automatically used (and generated if there is none)
   elixir --name $node_name -S mix run --no-halt &
 }
 
 mix compile
 
-# Start each instance
 for i in $(seq 1 $NUM_INSTANCES); do
   start_instance $i
 done
@@ -88,11 +77,11 @@ Le `&`indique de le lancer sur un processus (un processus de l'OS) fils du scrip
 
 Nous avons dû ajouter `mix compile` en amont car le lancement en parallèle de plusieurs `mix run` pouvait lancer des compilations qui se marchaient sur les pieds.
 
-Un petit `chmod u+x ./scripts/start_cluster.sh` pour donner des droits d'execution au script bash, et vous pouvez lancer vos 5 machines `./scripts/start_cluster.sh` !
+Un petit `chmod u+x ./scripts/start_cluster.sh` pour donner des droits d'exécution au script bash, et vous pouvez lancer vos 5 machines `./scripts/start_cluster.sh` !
 
 ### Créer un cluster
 
-Pour l'instant, les 5 machines ne se connaissent pas, elles vivent leur vie indépendante l'une de l'autre. Pour former un cluster, il faut qu'elles se reconnaissent entre elles.
+Pour l'instant, les 5 machines ne se connaissent pas, elles vivent leur vie indépendantes l'une de l'autre. Pour former un cluster, il faut qu'elles se reconnaissent entre elles.
 Après avoir lancé vos machines dans un terminal, ouvrez un autre terminal et lancez `iex`.
 
 ```
@@ -110,7 +99,7 @@ Après tentatives et tests, nous avons compris qu'il faut donner un nom à notre
 
 ```
 iex --name master@127.0.0.1
-iex(master@127.0.0.1)1> Node.ping(:"apothik_1@127.0.0.1")
+1> Node.ping(:"apothik_1@127.0.0.1")
 :pong
 ```
 
@@ -121,13 +110,13 @@ On en profite pour mettre `iex --name master@127.0.0.1` dans `/scripts/start_mas
 Continuons:
 
 ```terminal
-iex(master@127.0.0.1)2> Node.list
+2> Node.list
 [:"apothik_1@127.0.0.1"]
-iex(master@127.0.0.1)3> Node.ping(:"apothik_2@127.0.0.1")
+3> Node.ping(:"apothik_2@127.0.0.1")
 :pong
-iex(master@127.0.0.1)4> Node.list
+4> Node.list
 [:"apothik_1@127.0.0.1", :"apothik_2@127.0.0.1"]
-iex(master@127.0.0.1)6> :rpc.call(:"apothik_2@127.0.0.1", Node, :list, [])
+6> :rpc.call(:"apothik_2@127.0.0.1", Node, :list, [])
 [:"master@127.0.0.1", :"apothik_1@127.0.0.1"]
 ```
 
@@ -142,8 +131,7 @@ Pas vraiment, quand on lance une machine virtuelle Erlang, elle est associée av
 lancées avec le même `cookie` peuvent se connecter entre elles. On peut specifier le cookie avec `--cookie`, mais si on ne le fait pas, le fichier
 `~/.erlang.cookie` est utilisé (et généré s'il n'existe pas). Comme on a lancé les machines du même utilisateur, elles avaient le même cookie.
 
-**Attention**, le cookie n'est qu'un moyen de partitionner les clusters sur un même réseau physique (pour déployer un cluster de dév sur la même machine qu'un cluster de qualification, par exemple). 
-Il ne protège pas des attaques malveillantes! Si le cluster est déployé sur un réseau public, il faudra adopter des mesures de sécurité supplémentaires : chiffrement inter-noeuds, authentification, etc.
+**Attention**, le cookie n'est qu'un moyen de partitionner les clusters sur un même réseau physique (pour déployer un cluster de dév sur la même machine qu'un cluster de qualification, par exemple). Il ne protège pas des attaques malveillantes! Si le cluster est déployé sur un réseau public, il faudra adopter des mesures de sécurité supplémentaires : chiffrement inter-noeuds, authentification, etc.
 
 ### Découverte automatique des noeuds entre eux
 
@@ -204,9 +192,9 @@ etc...
 Dans l'autre terminal, vérifiez que le cluster est monté:
 ```
 % ./scripts/start_master.sh
-iex(master@127.0.0.1)1> Node.ping(:"apothik_1@127.0.0.1")
+1> Node.ping(:"apothik_1@127.0.0.1")
 :pong
-iex(master@127.0.0.1)2> Node.list
+2> Node.list
 [:"apothik_1@127.0.0.1", :"apothik_2@127.0.0.1", :"apothik_5@127.0.0.1",
  :"apothik_3@127.0.0.1", :"apothik_4@127.0.0.1"]
 ```
@@ -237,28 +225,16 @@ defmodule Apothik.Cache do
 
   # Implementation
   @impl true
-  def init(_args) do
-    {:ok, %{}}
-  end
+  def init(_args), do: {:ok, %{}}
 
   @impl true
-  def handle_call({:get, k}, _from, state) do
-    {:reply, Map.get(state, k), state}
-  end
+  def handle_call({:get, k}, _from, state), do: {:reply, Map.get(state, k), state}
 
-  def handle_call({:put, k, v}, _from, state) do
-    new_state = Map.put(state, k, v)
-    {:reply, :ok, new_state}
-  end
+  def handle_call({:put, k, v}, _from, state), do: {:reply, :ok, Map.put(state, k, v)}
 
-  def handle_call({:delete, k}, _from, state) do
-    new_state = Map.delete(state, k)
-    {:reply, :ok, new_state}
-  end
+  def handle_call({:delete, k}, _from, state), do: {:reply, :ok, Map.delete(state, k)}
 
-  def handle_call(:stats, _from, state) do
-    {:reply, map_size(state), state}
-  end
+  def handle_call(:stats, _from, state), do: {:reply, map_size(state), state}
 end
 ```
 
@@ -289,11 +265,11 @@ Maintenant, retour dans le terminal:
 
 ```
 % ./scripts/start_master.sh 
-iex(master@127.0.0.1)4> :rpc.call(:"apothik_1@127.0.0.1", Apothik.Cache, :stats, [])
+4> :rpc.call(:"apothik_1@127.0.0.1", Apothik.Cache, :stats, [])
 0
-iex(master@127.0.0.1)5> :rpc.call(:"apothik_1@127.0.0.1", Apothik.Cache, :put, [:toto, 12])
+5> :rpc.call(:"apothik_1@127.0.0.1", Apothik.Cache, :put, [:toto, 12])
 :ok
-iex(master@127.0.0.1)6> :rpc.call(:"apothik_1@127.0.0.1", Apothik.Cache, :stats, [])
+6> :rpc.call(:"apothik_1@127.0.0.1", Apothik.Cache, :stats, [])
 1
 ```
 
@@ -326,9 +302,9 @@ end
 Relancez le cluster. Vérifions que l'on peut mettre des choses en cache sur un noeud donné:
 ```
 % ./scripts/start_master.sh
-iex(master@127.0.0.1)1> Master.fill(1,1000)
+1> Master.fill(1,1000)
 :ok
-iex(master@127.0.0.1)2> Master.stat(1)
+2> Master.stat(1)
 1000
 ```
 
@@ -361,18 +337,18 @@ En effet, si l'on envoie un message quelconque à un `GenServer` (un message qui
 Essayons:
 ``` 
 % ./scripts/start_master.sh
-iex(master@127.0.0.1)1> Process.send({Apothik.Cache, :"apothik_1@127.0.0.1"}, "hey there", [])
+1> Process.send({Apothik.Cache, :"apothik_1@127.0.0.1"}, "hey there", [])
 :ok
 ```
 
 Et `"hey there"` apparaît dans le terminal du cluster. Allez, on tente avec `GenServer.call`:
 
 ```
-iex(master@127.0.0.1)2>GenServer.call({Apothik.Cache, :"apothik_1@127.0.0.1"}, {:put, 1, "something"})
+2>GenServer.call({Apothik.Cache, :"apothik_1@127.0.0.1"}, {:put, 1, "something"})
 :ok
-iex(master@127.0.0.1)3> GenServer.call({Apothik.Cache, :"apothik_1@127.0.0.1"}, :stats)
+3> GenServer.call({Apothik.Cache, :"apothik_1@127.0.0.1"}, :stats)
 1
-iex(master@127.0.0.1)4> GenServer.call({Apothik.Cache, :"apothik_1@127.0.0.1"}, {:get,1})
+4> GenServer.call({Apothik.Cache, :"apothik_1@127.0.0.1"}, {:get,1})
 "something"
 ```
 
@@ -480,11 +456,11 @@ On n'est pas très fier de la fonction `def node_name(i), do: :"apothik_#{i}@127
 Maintenant, remplissons le cache pour voir ce qui se passe:
 ```
 % ./scripts/start_master.sh
-iex(master@127.0.0.1)1> Master.fill(1, 5000)
+1> Master.fill(1, 5000)
 :ok
-iex(master@127.0.0.1)2> for i<-1..5, do: Master.stat(i)
+2> for i<-1..5, do: Master.stat(i)
 [1026, 996, 1012, 1021, 945]
-iex(master@127.0.0.1)3> (for i<-1..5, do: Master.stat(i)) |> Enum.sum
+3> (for i<-1..5, do: Master.stat(i)) |> Enum.sum
 5000
 ```
 

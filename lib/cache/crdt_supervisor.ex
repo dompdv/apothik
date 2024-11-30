@@ -1,4 +1,4 @@
-defmodule Apothik.Crdt do
+defmodule Apothik.CrdtSupervisor do
   use Supervisor
 
   alias Apothik.Cache

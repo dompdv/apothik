@@ -98,16 +98,11 @@ defmodule Apothik.Cache do
     {:ok, pid} =
       DeltaCrdt.start_link(DeltaCrdt.AWLWWMap,
         max_sync_size: 30_000,
-        # max_sync_size: 500,
         name: crdt_name(g)
       )
 
-    state =
-      %{group: g, pid: pid}
-      |> set_neighbours()
-
+    state = set_neighbours(%{group: g, pid: pid})
     Logger.debug("Starting cache #{state.group} on node #{Node.self()}")
-
     :net_kernel.monitor_nodes(true)
     {:ok, state}
   end
