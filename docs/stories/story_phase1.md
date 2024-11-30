@@ -1,3 +1,8 @@
+---
+title: Distributed applications with Elixir, a beginners' journey - Part 1
+---
+
+
 # A la découverte des applications distribuées avec Elixir
 
 ## Pourquoi ?
@@ -99,7 +104,7 @@ Après tentatives et tests, nous avons compris qu'il faut donner un nom à notre
 
 ```
 iex --name master@127.0.0.1
-iex(master@127.0.0.1)1> Node.ping(:"apothik_1@127.0.0.1")
+1> Node.ping(:"apothik_1@127.0.0.1")
 :pong
 ```
 
@@ -110,13 +115,13 @@ On en profite pour mettre `iex --name master@127.0.0.1` dans `/scripts/start_mas
 Continuons:
 
 ```terminal
-iex(master@127.0.0.1)2> Node.list
+2> Node.list
 [:"apothik_1@127.0.0.1"]
-iex(master@127.0.0.1)3> Node.ping(:"apothik_2@127.0.0.1")
+3> Node.ping(:"apothik_2@127.0.0.1")
 :pong
-iex(master@127.0.0.1)4> Node.list
+4> Node.list
 [:"apothik_1@127.0.0.1", :"apothik_2@127.0.0.1"]
-iex(master@127.0.0.1)6> :rpc.call(:"apothik_2@127.0.0.1", Node, :list, [])
+6> :rpc.call(:"apothik_2@127.0.0.1", Node, :list, [])
 [:"master@127.0.0.1", :"apothik_1@127.0.0.1"]
 ```
 
@@ -192,9 +197,9 @@ etc...
 Dans l'autre terminal, vérifiez que le cluster est monté:
 ```
 % ./scripts/start_master.sh
-iex(master@127.0.0.1)1> Node.ping(:"apothik_1@127.0.0.1")
+1> Node.ping(:"apothik_1@127.0.0.1")
 :pong
-iex(master@127.0.0.1)2> Node.list
+2> Node.list
 [:"apothik_1@127.0.0.1", :"apothik_2@127.0.0.1", :"apothik_5@127.0.0.1",
  :"apothik_3@127.0.0.1", :"apothik_4@127.0.0.1"]
 ```
@@ -265,11 +270,11 @@ Maintenant, retour dans le terminal:
 
 ```
 % ./scripts/start_master.sh 
-iex(master@127.0.0.1)4> :rpc.call(:"apothik_1@127.0.0.1", Apothik.Cache, :stats, [])
+4> :rpc.call(:"apothik_1@127.0.0.1", Apothik.Cache, :stats, [])
 0
-iex(master@127.0.0.1)5> :rpc.call(:"apothik_1@127.0.0.1", Apothik.Cache, :put, [:toto, 12])
+5> :rpc.call(:"apothik_1@127.0.0.1", Apothik.Cache, :put, [:toto, 12])
 :ok
-iex(master@127.0.0.1)6> :rpc.call(:"apothik_1@127.0.0.1", Apothik.Cache, :stats, [])
+6> :rpc.call(:"apothik_1@127.0.0.1", Apothik.Cache, :stats, [])
 1
 ```
 
@@ -302,9 +307,9 @@ end
 Relancez le cluster. Vérifions que l'on peut mettre des choses en cache sur un noeud donné:
 ```
 % ./scripts/start_master.sh
-iex(master@127.0.0.1)1> Master.fill(1,1000)
+1> Master.fill(1,1000)
 :ok
-iex(master@127.0.0.1)2> Master.stat(1)
+2> Master.stat(1)
 1000
 ```
 
@@ -337,18 +342,18 @@ En effet, si l'on envoie un message quelconque à un `GenServer` (un message qui
 Essayons:
 ``` 
 % ./scripts/start_master.sh
-iex(master@127.0.0.1)1> Process.send({Apothik.Cache, :"apothik_1@127.0.0.1"}, "hey there", [])
+1> Process.send({Apothik.Cache, :"apothik_1@127.0.0.1"}, "hey there", [])
 :ok
 ```
 
 Et `"hey there"` apparaît dans le terminal du cluster. Allez, on tente avec `GenServer.call`:
 
 ```
-iex(master@127.0.0.1)2>GenServer.call({Apothik.Cache, :"apothik_1@127.0.0.1"}, {:put, 1, "something"})
+2>GenServer.call({Apothik.Cache, :"apothik_1@127.0.0.1"}, {:put, 1, "something"})
 :ok
-iex(master@127.0.0.1)3> GenServer.call({Apothik.Cache, :"apothik_1@127.0.0.1"}, :stats)
+3> GenServer.call({Apothik.Cache, :"apothik_1@127.0.0.1"}, :stats)
 1
-iex(master@127.0.0.1)4> GenServer.call({Apothik.Cache, :"apothik_1@127.0.0.1"}, {:get,1})
+4> GenServer.call({Apothik.Cache, :"apothik_1@127.0.0.1"}, {:get,1})
 "something"
 ```
 
@@ -456,11 +461,11 @@ On n'est pas très fier de la fonction `def node_name(i), do: :"apothik_#{i}@127
 Maintenant, remplissons le cache pour voir ce qui se passe:
 ```
 % ./scripts/start_master.sh
-iex(master@127.0.0.1)1> Master.fill(1, 5000)
+1> Master.fill(1, 5000)
 :ok
-iex(master@127.0.0.1)2> for i<-1..5, do: Master.stat(i)
+2> for i<-1..5, do: Master.stat(i)
 [1026, 996, 1012, 1021, 945]
-iex(master@127.0.0.1)3> (for i<-1..5, do: Master.stat(i)) |> Enum.sum
+3> (for i<-1..5, do: Master.stat(i)) |> Enum.sum
 5000
 ```
 

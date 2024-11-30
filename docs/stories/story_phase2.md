@@ -1,11 +1,16 @@
-# Phase 2 : Un Cache distribué, sans redondance, mais avec un cluster dynamique (ajout et perte de machine)
+---
+title: Distributed applications with Elixir, a beginners' journey - Part 2
+---
 
-## Comment enlever une machine d'un cluster ?
+# A la découverte des applications distribuées avec Elixir
+## Phase 2 : Un Cache distribué, sans redondance, mais avec un cluster dynamique (ajout et perte de machine)
+
+### Comment enlever une machine d'un cluster ?
 
 Une première tentative avec [`Node.stop/0`](https://hexdocs.pm/elixir/Node.html#stop/0).
 ```
 % ./scripts/start_master.sh
-iex(master@127.0.0.1)1>  :rpc.call(:"apothik_1@127.0.0.1", Node, :stop, [])
+1>  :rpc.call(:"apothik_1@127.0.0.1", Node, :stop, [])
 {:error, :not_allowed} 
 ```
 Ca ne marche pas. Nous aurions dû lire la documentation avec plus d'attention car cela ne fonctionne qu'avec des noeuds 
@@ -13,17 +18,17 @@ lancés avec `Node.start/3` et pas des noeuds lancés en ligne de commande.
 
 En fait, c'est [`System.stop/0`](https://hexdocs.pm/elixir/System.html#stop/1) qui fait l'affaire:
 ```
-iex(master@127.0.0.1)2> :rpc.call(:"apothik_1@127.0.0.1", System, :stop, [])
+2> :rpc.call(:"apothik_1@127.0.0.1", System, :stop, [])
 :ok
-iex(master@127.0.0.1)3> for i<-1..5, do: Master.stat(i)
+3> for i<-1..5, do: Master.stat(i)
 [{:badrpc, :nodedown}, 0, 0, 0, 0]
 ```
 
 Essayons de remplir le cache
 ```
-iex(master@127.0.0.1)5> Master.fill(1, 5000)
+5> Master.fill(1, 5000)
 :ok
-iex(master@127.0.0.1)6> for i<-1..5, do: Master.stat(i)
+6> for i<-1..5, do: Master.stat(i)
 [{:badrpc, :nodedown}, 0, 0, 0, 0]
 ```
 
@@ -31,19 +36,19 @@ Le cache n'est pas rempli ?? Après réflexion, c'est normal. `Master.fill(1,500
 Recommençons depuis le début. On relance le cluster dans le premier terminal `% ./scripts/start_cluster.sh`. Et dans le second:
 ```
 % ./scripts/start_master.sh
-iex(master@127.0.0.1)1> Master.fill(2, 5000)
+1> Master.fill(2, 5000)
 :ok
-iex(master@127.0.0.1)2> for i<-1..5, do: Master.stat(i)
+2> for i<-1..5, do: Master.stat(i)
 [1023, 987, 1050, 993, 947]
-iex(master@127.0.0.1)3> :rpc.call(:"apothik_1@127.0.0.1", System, :stop, [])
+3> :rpc.call(:"apothik_1@127.0.0.1", System, :stop, [])
 :ok
-iex(master@127.0.0.1)4> for i<-1..5, do: Master.stat(i)
+4> for i<-1..5, do: Master.stat(i)
 [{:badrpc, :nodedown}, 987, 1050, 993, 947]
 ```
 
 On a bien perdu les 1023 clés du noeud 1.
 
-## Monitorer dynamiquement l'état du serveur
+### Monitorer dynamiquement l'état du serveur
 
 Le problème, c'est que le nombre de machines était fixé dans `Apothik.Cluster` avec `@nb_nodes 5`. 
 Ce que l'on souhaite, c'est que la fonction `key_to_node/1` s'adapte automatiquement au nombre de machines qui fonctionnent.
@@ -124,7 +129,7 @@ que ceux dont le nom commence par `apothik`. C'est ce que fait `list_apothik_nod
 
 Le processus s'abonne aux événements dans `init/1` avec `:net_kernel.monitor_nodes(true)`. Puis il réagit aux événements `{:nodeup, node}` et `{:nodedown, _node}`. A ce stade, nous avons un GenServer qui connait la liste des noeuds du cluster à chaque instant.
 
-## Adapter dynamiquement le nombre de machines
+### Adapter dynamiquement le nombre de machines
 
 Nous avons choisi (est-ce la meilleure solution, le débat n'est pas tranché entre nous) que cette liste dynamique soit immédiatement communiquée à `Apothik.Cache`. 
 Ce dernier évolue:
@@ -204,7 +209,7 @@ Commentons un peu plus en détail
 Ce nombre ne correspond plus directement à un nom de serveur mais à un indice dans la liste de noeuds. On voit bien que la même clé avant et après le départ d'un serveur a toutes les chances de ne pas se retrouver au même endroit.
 
 
-## Un petit essai: enlever une machine
+### Un petit essai: enlever une machine
 
 Pour se simplifier la vie, on ajoute dans `.iex.exs`
 ```elixir
@@ -220,36 +225,36 @@ Pour se simplifier la vie, on ajoute dans `.iex.exs`
 On relance le cluster (`/scripts/start_cluster.sh) et on se lance dans des expériences:
 ```
  % ./scripts/start_master.sh
-iex(master@127.0.0.1)1> Master.fill(1,5000)
+1> Master.fill(1,5000)
 :ok
-iex(master@127.0.0.1)2> Master.stat
+2> Master.stat
 [{1, 1026}, {2, 996}, {3, 1012}, {4, 1021}, {5, 945}]
-iex(master@127.0.0.1)3> (for {_, n} <- Master.stat, is_integer(n), do: n) |> Enum.sum
+3> (for {_, n} <- Master.stat, is_integer(n), do: n) |> Enum.sum
 5000
-iex(master@127.0.0.1)4> Master.kill(2)
+4> Master.kill(2)
 :ok
-iex(master@127.0.0.1)5> Master.stat
+5> Master.stat
 [{1, 1026}, {2, {:badrpc, :nodedown}}, {3, 1012}, {4, 1021}, {5, 945}]
-iex(master@127.0.0.1)6> (for {_, n} <- Master.stat, is_integer(n), do: n) |> Enum.sum
+6> (for {_, n} <- Master.stat, is_integer(n), do: n) |> Enum.sum
 4004
-iex(master@127.0.0.1)7> Master.fill(1,5000)
+7> Master.fill(1,5000)
 :ok
-iex(master@127.0.0.1)8> (for {_, n} <- Master.stat, is_integer(n), do: n) |> Enum.sum
+8> (for {_, n} <- Master.stat, is_integer(n), do: n) |> Enum.sum
 8056
 ```
 
 Après avoir rempli le cache avec 5000 valeurs, on supprime le noeud 2. On a bien perdu environ 1000 valeurs (996 pour être précis). On reremplit le cache avec les mêmes 5000 valeurs. On voit alors qu'il n'y a pas 5000 valeurs en plus. En effet, certaines clés étaient au bon endroit. Il y a eu création de 8056-4004=4052 d'entrées dans la mémoire du cache, ce qui signifie que 5000-4052= 948 valeurs n'ont pas migré de noeud. C'est un peu normal, car lorsqu'on est passé de 5 à 4 machines, les clés se sont retrouvées rebalancées de façon aléatoire. Il y avait donc une probabilité de 20% (ou de 25%, je laisse les commentateurs nous dire) que des clés soient au bon endroit.
 
-## Deuxième essai: ajouter une machine
+### Deuxième essai: ajouter une machine
 
 Maintenant, nous pouvons faire l'expérience inverse, c'est à dire ajouter une machine. On repart de 0, en relançant le cluster dans un terminal `./scripts/start_cluster.sh` et, dans un autre terminal:
 ``` 
 % ./scripts/start_master.sh 
-iex(master@127.0.0.1)1> Master.kill(2)
+1> Master.kill(2)
 :ok
-iex(master@127.0.0.1)2> Master.fill(1,5000)
+2> Master.fill(1,5000)
 :ok
-iex(master@127.0.0.1)3> Master.stat
+3> Master.stat
 [{1, 1228}, {2, {:badrpc, :nodedown}}, {3, 1290}, {4, 1228}, {5, 1254}]
 ```
 
@@ -259,9 +264,9 @@ On revient dans le terminal du master:
 ```
 4> Master.stat
 [  {1, 1228},  {2, 0},  {3, 1290},  {4, 1228},  {5, 1254}]
-iex(master@127.0.0.1)5> Master.fill(1,5000)
+5> Master.fill(1,5000)
 :ok
-iex(master@127.0.0.1)6> Master.stat
+6> Master.stat
 [  {1, 2032},  {2, 996},  {3, 2027},  {4, 2027},  {5, 1970}]
 ```
 C'est positif: le noeud a bien été réintégré au cluster automatiquement! Le but est donc atteint.
@@ -270,7 +275,7 @@ On constate bien un rebalancement aléatoire des clés sur les 5 noeuds, ce qui 
 
 On vous laisse essayer d'ajouter une nouvelle machine `apothik_6` et observer ce qui se passe.
 
-## Interlude: nettoyer un peu
+### Interlude: nettoyer un peu
 
 Nous sommes allés au plus vite quand nous avons ajouté le suivi des noeuds qui entrent et sortent du cluster. Souvenez-vous, `Apothik.Cluster` qui suit les entrées et sorties de noeuds dans le cluster informe `Apothik.Cache` à chaque changement. Celui-ci est un `GenServer` qui conserve l'état du cluster dans son état.
 
@@ -357,7 +362,7 @@ end
 
 On vous laisse vérifier que tout marche bien. Fin de l'interlude !
 
-## Critique du fonctionnement actuel et solution possible
+### Critique du fonctionnement actuel et solution possible
 
 Quelque chose ne nous plait pas. L'arrivée ou la sortie d'un noeud dans le cluster est un cataclysme. Toutes les clés sont rebalancées. Cela conduit à un cache qui va subitement baisser en performance à chaque fois qu'un tel événement survient, car les clés ne seront plus disponibles. Et à avoir des mémoires pleines de clés inutiles. Finalement, un événement qui devrait être local, voire insignifiant dans le cas d'un très grand cluster, chamboule la totalité du cluster. Comment rendre la distribution des clés  moins sensible à la structure du cluster ?
 
@@ -365,7 +370,7 @@ Après discussion entre nous et quelques pages de bloc-notes, une solution se fo
 
 L'idée est de se donner des jetons ("tokens") (pour fixer les idées, prenons 1000 tokens, numérotés de 0 à 999). Nous allons distribuer les clés sur les tokens et non les machines, avec quelque chose comme `:erlang.phash2(k, @nb_tokens)`. Ce nombre de tokens est fixe. Il n'y a pas création ou suppression de tokens à l'arrivée ou à l'ajout d'un serveur dans le cluster. Les tokens sont distribués sur les machines. L'arrivée ou le départ d'une machine va conduire à une redistribution de tokens. Mais nous contrôlons cette redistribution, donc nous pouvons faire qu'elle affecte de façon minimale le rebalancement des clés.
 
-## Mise en oeuvre de la solution
+### Mise en oeuvre de la solution
 
 Première remarque, `Apothik.Cluster` ne change pas. Sa responsabilité est de suivre l'état du cluster et de prévenir `Apothik.Cache`. Point final.
 
@@ -527,7 +532,7 @@ On ajoute dans `.iex.exs`de quoi vérifier comment bougent les tokens:
 Momentanément, on change le nombre de tokens `@nb_tokens 10`.
 ```
 % ./scripts/start_master.sh
-iex(master@127.0.0.1)1> Master.get_tokens(1)
+1> Master.get_tokens(1)
 [
   [:"apothik_5@127.0.0.1", ~c"\b\t"],
   [:"apothik_4@127.0.0.1", [6, 7]],
@@ -540,38 +545,38 @@ iex(master@127.0.0.1)1> Master.get_tokens(1)
 On remet `@nb_tokens 1000` et on relance tout:
 ```
 % ./scripts/start_master.sh
-iex(master@127.0.0.1)1> Master.check_tokens(1)
+1> Master.check_tokens(1)
 1000
 ```
 
 Ca marche, maintenant que se passe-t-il si on enlève un noeud ?
 
 ```
-iex(master@127.0.0.1)2> Master.fill(1,5000)
+2> Master.fill(1,5000)
 :ok
-iex(master@127.0.0.1)3> Master.stat
+3> Master.stat
 [  {1, 1016},  {2, 971},  {3, 970},  {4, 985},  {5, 1058}]
-iex(master@127.0.0.1)4> Master.kill(2)
+4> Master.kill(2)
 :ok
-iex(master@127.0.0.1)5> Master.fill(1,5000)
+5> Master.fill(1,5000)
 :ok
-iex(master@127.0.0.1)6> Master.stat
+6> Master.stat
 [  {1, 1265},  {2, {:badrpc, :nodedown}},  {3, 1238},  {4, 1224},  {5, 1273} ]
-iex(master@127.0.0.1)7> Master.check_tokens(1)
+7> Master.check_tokens(1)
 1000
 ```
 
 Dans un autre terminal, on relance `apothik_2`: `% elixir --name apothik_2@127.0.0.1 -S mix run --no-halt`. En revenant dans master:
 ```
-iex(master@127.0.0.1)8> Master.stat
+8> Master.stat
 [  {1, 1265},  {2, 0},  {3, 1238},  {4, 1224},  {5, 1273} ]
-iex(master@127.0.0.1)9> Master.fill(1,5000)
+9> Master.fill(1,5000)
 :ok
-iex(master@127.0.0.1)10> Master.stat
+10> Master.stat
 [  {1, 1265},  {2, 971},  {3, 1238},  {4, 1224},  {5, 1273}]
-iex(master@127.0.0.1)11> Master.check_tokens(1)
+11> Master.check_tokens(1)
 1000
-iex(master@127.0.0.1)12> for [_n,t]<-Master.get_tokens(1), do: length(t)
+12> for [_n,t]<-Master.get_tokens(1), do: length(t)
 [200, 200, 200, 200, 200]
 ```
 
@@ -579,7 +584,7 @@ On n'a pas perdu de token au passage, et ils sont bien répartis équitablement 
 
 Que se passe-t-il dans les mémoires des serveurs? Les clés de `apothik_2` on bien été perdues quand il est mort. Quand on recharge alors le système avec les mêmes clés, on répartit environ 1000 clés sur les autres. Après son retour et un rechargement, on se retrouve avec un surplus de 265+238+224+273=1000 clés. Ce qui est cohérent. 
 
-## Irruption du "Hash ring" 
+### Irruption du "Hash ring" 
 
 Une remarque: nous avons conçu notre système de redistribution de tokens sans trop y réfléchir. Nous soupçonnons d'abord qu'il pourrait dériver (c'est à dire que l'on pourrait s'éloigner d'une répartition équitable. En tout cas, cela reste à tester). Mais surtout, nous nous doutons bien qu'il doit y avoir une approche optimale de distribution des tokens pour garantir un minimum de changements.
 
@@ -626,6 +631,6 @@ end
 C'est plus simple, n'est-ce-pas ? Bon, pas sûr que notre idée d'utiliser `ets` soit la bonne. En tout cas, ça marche et ça nous suffit pour l'instant.
 
 
-##  Petit récapitulatif de la phase 2:
+###  Petit récapitulatif de la phase 2:
 
 Nous avons un système distribué qui réagit automatiquement aux arrivées et départs de noeuds dans le cluster. Nous avons aussi amélioré la solution initiale pour le rendre moins sensible aux changements (arrivée et départs de noeuds). Au passage, notre solution n'est plus sensible au nom du noeud (tout noeud dont le nom commence par `apothik` peut rejoindre le cluster).
