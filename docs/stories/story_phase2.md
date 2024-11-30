@@ -2,6 +2,7 @@
 title: Distributed applications with Elixir, a beginners' journey - Part 2
 ---
 
+
 # A la découverte des applications distribuées avec Elixir
 ## Phase 2 : Un Cache distribué, sans redondance, mais avec un cluster dynamique (ajout et perte de machine)
 

@@ -2,7 +2,6 @@
 title: Distributed applications with Elixir, a beginners' journey - Part 3
 ---
 
-
 # Phase 3 : Ajout de redondance de stockage pour garantir la conservation des données malgré la perte de machine
 
 Soyons honnêtes, le contenu de cette phase a été choisi au départ de notre aventure, sans connaître le sujet. En réalité, nous avons bien senti la grande différence de difficulté en l'abordant. Jusqu'ici, les choses semblaient relativement faciles, même si nous sommes conscients que nous sommes probablement passés à côté de difficultés nombreuses qui ne manqueraient pas d'apparaître dans un vrai contexte de production. Mais, reconnaissons le, nous n'avons eu jusqu'à présent qu'à rajouter une petite couche de code qui tire parti des possibilités toutes faites fournies par la BEAM.
