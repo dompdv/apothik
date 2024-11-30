@@ -4,6 +4,13 @@ defmodule Apothik.Application do
   use Application
 
   @impl true
+
+  def start(_type, true) do
+    children = [{Testing.Master, Apothik.Cluster.static_nb_nodes()}]
+
+    Supervisor.start_link(children, strategy: :one_for_one, name: Apothik.Supervisor)
+  end
+
   def start(_type, _args) do
     hosts = Apothik.Cluster.node_list()
 

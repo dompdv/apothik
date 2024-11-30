@@ -2,7 +2,6 @@
 title: Distributed applications with Elixir, a beginners' journey - Part 1
 ---
 
-
 # A la découverte des applications distribuées avec Elixir
 
 ## Pourquoi ?
