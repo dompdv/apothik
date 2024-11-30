@@ -10,6 +10,8 @@ defmodule ApothikTest do
   end
 
   test "Start and kill", %{nb_bnodes: nb_nodes} do
+    IO.inspect("start test")
+
     assert Master.master_state() == %Testing.Master{
              nodes: Enum.to_list(0..(nb_nodes - 1)),
              started: []
@@ -24,5 +26,6 @@ defmodule ApothikTest do
     Master.kill_node(1)
     Process.sleep(2000)
     assert Node.list() == []
+    IO.inspect("end test")
   end
 end

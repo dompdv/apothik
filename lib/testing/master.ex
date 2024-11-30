@@ -58,13 +58,17 @@ defmodule Testing.Master do
   # Cluster state management
 
   def start_beam(node) do
-    node_name = Atom.to_string(Cluster.node_name(node))
+    node_name = Cluster.node_name(node)
     Logger.debug("Starting node #{node}")
 
     {:ok, _} =
       Task.start(fn ->
-        System.shell("elixir --name #{node_name} -S mix run --no-halt")
+        IO.inspect("Launch")
+        System.shell("elixir --name #{Atom.to_string(node_name)} -S mix run --no-halt")
       end)
+
+    Process.sleep(100)
+    Node.connect(node_name)
   end
 
   def stat(i) do
