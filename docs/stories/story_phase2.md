@@ -1,6 +1,7 @@
 ---
-title: Un Cache distribué, sans redondance, mais avec un cluster dynamique (ajout et perte de machine)
+title: Distributed applications with Elixir, a beginners' journey - Part 2
 ---
+
 # A la découverte des applications distribuées avec Elixir
 ## Phase 2 : Un Cache distribué, sans redondance, mais avec un cluster dynamique (ajout et perte de machine)
 
@@ -9,7 +10,7 @@ title: Un Cache distribué, sans redondance, mais avec un cluster dynamique (ajo
 Une première tentative avec [`Node.stop/0`](https://hexdocs.pm/elixir/Node.html#stop/0).
 ```
 % ./scripts/start_master.sh
-iex(master@127.0.0.1)1>  :rpc.call(:"apothik_1@127.0.0.1", Node, :stop, [])
+1>  :rpc.call(:"apothik_1@127.0.0.1", Node, :stop, [])
 {:error, :not_allowed} 
 ```
 Ca ne marche pas. Nous aurions dû lire la documentation avec plus d'attention car cela ne fonctionne qu'avec des noeuds 
@@ -17,17 +18,17 @@ lancés avec `Node.start/3` et pas des noeuds lancés en ligne de commande.
 
 En fait, c'est [`System.stop/0`](https://hexdocs.pm/elixir/System.html#stop/1) qui fait l'affaire:
 ```
-iex(master@127.0.0.1)2> :rpc.call(:"apothik_1@127.0.0.1", System, :stop, [])
+2> :rpc.call(:"apothik_1@127.0.0.1", System, :stop, [])
 :ok
-iex(master@127.0.0.1)3> for i<-1..5, do: Master.stat(i)
+3> for i<-1..5, do: Master.stat(i)
 [{:badrpc, :nodedown}, 0, 0, 0, 0]
 ```
 
 Essayons de remplir le cache
 ```
-iex(master@127.0.0.1)5> Master.fill(1, 5000)
+5> Master.fill(1, 5000)
 :ok
-iex(master@127.0.0.1)6> for i<-1..5, do: Master.stat(i)
+6> for i<-1..5, do: Master.stat(i)
 [{:badrpc, :nodedown}, 0, 0, 0, 0]
 ```
 
@@ -35,13 +36,13 @@ Le cache n'est pas rempli ?? Après réflexion, c'est normal. `Master.fill(1,500
 Recommençons depuis le début. On relance le cluster dans le premier terminal `% ./scripts/start_cluster.sh`. Et dans le second:
 ```
 % ./scripts/start_master.sh
-iex(master@127.0.0.1)1> Master.fill(2, 5000)
+1> Master.fill(2, 5000)
 :ok
-iex(master@127.0.0.1)2> for i<-1..5, do: Master.stat(i)
+2> for i<-1..5, do: Master.stat(i)
 [1023, 987, 1050, 993, 947]
-iex(master@127.0.0.1)3> :rpc.call(:"apothik_1@127.0.0.1", System, :stop, [])
+3> :rpc.call(:"apothik_1@127.0.0.1", System, :stop, [])
 :ok
-iex(master@127.0.0.1)4> for i<-1..5, do: Master.stat(i)
+4> for i<-1..5, do: Master.stat(i)
 [{:badrpc, :nodedown}, 987, 1050, 993, 947]
 ```
 
@@ -224,21 +225,21 @@ Pour se simplifier la vie, on ajoute dans `.iex.exs`
 On relance le cluster (`/scripts/start_cluster.sh) et on se lance dans des expériences:
 ```
  % ./scripts/start_master.sh
-iex(master@127.0.0.1)1> Master.fill(1,5000)
+1> Master.fill(1,5000)
 :ok
-iex(master@127.0.0.1)2> Master.stat
+2> Master.stat
 [{1, 1026}, {2, 996}, {3, 1012}, {4, 1021}, {5, 945}]
-iex(master@127.0.0.1)3> (for {_, n} <- Master.stat, is_integer(n), do: n) |> Enum.sum
+3> (for {_, n} <- Master.stat, is_integer(n), do: n) |> Enum.sum
 5000
-iex(master@127.0.0.1)4> Master.kill(2)
+4> Master.kill(2)
 :ok
-iex(master@127.0.0.1)5> Master.stat
+5> Master.stat
 [{1, 1026}, {2, {:badrpc, :nodedown}}, {3, 1012}, {4, 1021}, {5, 945}]
-iex(master@127.0.0.1)6> (for {_, n} <- Master.stat, is_integer(n), do: n) |> Enum.sum
+6> (for {_, n} <- Master.stat, is_integer(n), do: n) |> Enum.sum
 4004
-iex(master@127.0.0.1)7> Master.fill(1,5000)
+7> Master.fill(1,5000)
 :ok
-iex(master@127.0.0.1)8> (for {_, n} <- Master.stat, is_integer(n), do: n) |> Enum.sum
+8> (for {_, n} <- Master.stat, is_integer(n), do: n) |> Enum.sum
 8056
 ```
 
@@ -249,11 +250,11 @@ Après avoir rempli le cache avec 5000 valeurs, on supprime le noeud 2. On a bie
 Maintenant, nous pouvons faire l'expérience inverse, c'est à dire ajouter une machine. On repart de 0, en relançant le cluster dans un terminal `./scripts/start_cluster.sh` et, dans un autre terminal:
 ``` 
 % ./scripts/start_master.sh 
-iex(master@127.0.0.1)1> Master.kill(2)
+1> Master.kill(2)
 :ok
-iex(master@127.0.0.1)2> Master.fill(1,5000)
+2> Master.fill(1,5000)
 :ok
-iex(master@127.0.0.1)3> Master.stat
+3> Master.stat
 [{1, 1228}, {2, {:badrpc, :nodedown}}, {3, 1290}, {4, 1228}, {5, 1254}]
 ```
 
@@ -263,9 +264,9 @@ On revient dans le terminal du master:
 ```
 4> Master.stat
 [  {1, 1228},  {2, 0},  {3, 1290},  {4, 1228},  {5, 1254}]
-iex(master@127.0.0.1)5> Master.fill(1,5000)
+5> Master.fill(1,5000)
 :ok
-iex(master@127.0.0.1)6> Master.stat
+6> Master.stat
 [  {1, 2032},  {2, 996},  {3, 2027},  {4, 2027},  {5, 1970}]
 ```
 C'est positif: le noeud a bien été réintégré au cluster automatiquement! Le but est donc atteint.
@@ -531,7 +532,7 @@ On ajoute dans `.iex.exs`de quoi vérifier comment bougent les tokens:
 Momentanément, on change le nombre de tokens `@nb_tokens 10`.
 ```
 % ./scripts/start_master.sh
-iex(master@127.0.0.1)1> Master.get_tokens(1)
+1> Master.get_tokens(1)
 [
   [:"apothik_5@127.0.0.1", ~c"\b\t"],
   [:"apothik_4@127.0.0.1", [6, 7]],
@@ -544,38 +545,38 @@ iex(master@127.0.0.1)1> Master.get_tokens(1)
 On remet `@nb_tokens 1000` et on relance tout:
 ```
 % ./scripts/start_master.sh
-iex(master@127.0.0.1)1> Master.check_tokens(1)
+1> Master.check_tokens(1)
 1000
 ```
 
 Ca marche, maintenant que se passe-t-il si on enlève un noeud ?
 
 ```
-iex(master@127.0.0.1)2> Master.fill(1,5000)
+2> Master.fill(1,5000)
 :ok
-iex(master@127.0.0.1)3> Master.stat
+3> Master.stat
 [  {1, 1016},  {2, 971},  {3, 970},  {4, 985},  {5, 1058}]
-iex(master@127.0.0.1)4> Master.kill(2)
+4> Master.kill(2)
 :ok
-iex(master@127.0.0.1)5> Master.fill(1,5000)
+5> Master.fill(1,5000)
 :ok
-iex(master@127.0.0.1)6> Master.stat
+6> Master.stat
 [  {1, 1265},  {2, {:badrpc, :nodedown}},  {3, 1238},  {4, 1224},  {5, 1273} ]
-iex(master@127.0.0.1)7> Master.check_tokens(1)
+7> Master.check_tokens(1)
 1000
 ```
 
 Dans un autre terminal, on relance `apothik_2`: `% elixir --name apothik_2@127.0.0.1 -S mix run --no-halt`. En revenant dans master:
 ```
-iex(master@127.0.0.1)8> Master.stat
+8> Master.stat
 [  {1, 1265},  {2, 0},  {3, 1238},  {4, 1224},  {5, 1273} ]
-iex(master@127.0.0.1)9> Master.fill(1,5000)
+9> Master.fill(1,5000)
 :ok
-iex(master@127.0.0.1)10> Master.stat
+10> Master.stat
 [  {1, 1265},  {2, 971},  {3, 1238},  {4, 1224},  {5, 1273}]
-iex(master@127.0.0.1)11> Master.check_tokens(1)
+11> Master.check_tokens(1)
 1000
-iex(master@127.0.0.1)12> for [_n,t]<-Master.get_tokens(1), do: length(t)
+12> for [_n,t]<-Master.get_tokens(1), do: length(t)
 [200, 200, 200, 200, 200]
 ```
 
