@@ -8,6 +8,13 @@ defmodule Testing.Truth do
     GenServer.start_link(__MODULE__, :ok, name: __MODULE__)
   end
 
+  def table_size(), do: @table_size
+
+  def random_sample() do
+    i = :rand.uniform(@table_size) - 1
+    {i, get(i)}
+  end
+
   def init(:ok) do
     Logger.debug(">>> Fill Truth table: start")
     :ets.new(:truth_table, [:named_table, :set, :protected])
