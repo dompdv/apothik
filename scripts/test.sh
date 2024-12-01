@@ -1,1 +1,1 @@
-elixir --name test_master@127.0.0.1 -S mix test
+elixir --name test_master@127.0.0.1 -S mix test $1

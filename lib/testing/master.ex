@@ -40,6 +40,18 @@ defmodule Testing.Master do
     Logger.debug("Killing node #{node}")
 
     kill_beam(node)
+    node_name = Cluster.node_name(node)
+
+    t =
+      Task.async(fn ->
+        Enum.reduce_while(1..300, false, fn _, _ ->
+          Process.sleep(500)
+          if node_name in Node.list(), do: {:cont, false}, else: {:halt, true}
+        end)
+      end)
+
+    if not Task.await(t, 10_000), do: raise("Failed to kill node #{node}")
+
     {:reply, :ok, %{state | started: List.delete(started, node)}}
   end
 
@@ -49,7 +61,7 @@ defmodule Testing.Master do
       |> Enum.split_with(fn {_, x} -> x == {:badrpc, :nodedown} end)
 
     stopped = for {node, _} <- stopped, do: node
-    s = Enum.sum(for {_, x} <- stats, do: x)
+    s = Enum.sum(for {_, x} <- stats, is_integer(x), do: x)
 
     {:reply, %{nodes: nodes, started: started, stats: Map.new(stats), stopped: stopped, sum: s},
      state}
@@ -59,16 +71,24 @@ defmodule Testing.Master do
 
   def start_beam(node) do
     node_name = Cluster.node_name(node)
-    Logger.debug("Starting node #{node}")
 
     {:ok, _} =
       Task.start(fn ->
-        IO.inspect("Launch")
+        Logger.debug("Starting node #{node}")
         System.shell("elixir --name #{Atom.to_string(node_name)} -S mix run --no-halt")
       end)
 
-    Process.sleep(100)
-    Node.connect(node_name)
+    t =
+      Task.async(fn ->
+        Enum.reduce_while(1..300, false, fn _, _ ->
+          node_list = Node.list()
+          Node.connect(node_name)
+          Process.sleep(500)
+          if node_name in node_list, do: {:halt, true}, else: {:cont, false}
+        end)
+      end)
+
+    if not Task.await(t, 10_000), do: raise("Failed to start node #{node}")
   end
 
   def stat(i) do
