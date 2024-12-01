@@ -1,4 +1,4 @@
-defmodule ApothikTest do
+defmodule ApothikTest.Cluster do
   use ExUnit.Case, async: false
   alias Testing.Master
   alias Apothik.Cluster
