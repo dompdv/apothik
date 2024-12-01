@@ -2,10 +2,9 @@ defmodule ApothikTest.Cluster do
   use ExUnit.Case, async: false
   alias Testing.Master
   alias Apothik.Cluster
-  import Testing.Fixtures
 
   setup_all do
-    on_exit(&stop_cluster/0)
+    on_exit(&Master.stop_cluster/0)
     %{nb_bnodes: Cluster.static_nb_nodes()}
   end
 
@@ -25,7 +24,7 @@ defmodule ApothikTest.Cluster do
   end
 
   test "Start a cluster" do
-    start_cluster()
-    stop_cluster()
+    Master.start_cluster()
+    Master.stop_cluster()
   end
 end

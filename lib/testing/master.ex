@@ -14,6 +14,18 @@ defmodule Testing.Master do
 
   def start_link(args), do: GenServer.start_link(__MODULE__, args, name: __MODULE__)
 
+  def start_cluster() do
+    Logger.debug("Starting cluster")
+    nb_nodes = Cluster.static_nb_nodes()
+    Enum.each(0..(nb_nodes - 1), fn i -> start_node(i) end)
+  end
+
+  def stop_cluster() do
+    Logger.debug("Stopping cluster")
+    nb_nodes = Cluster.static_nb_nodes()
+    Enum.each(0..(nb_nodes - 1), fn i -> kill_node(i) end)
+  end
+
   @impl true
   def init(args) do
     {:ok, %__MODULE__{nodes: Enum.to_list(0..(args - 1))}}
