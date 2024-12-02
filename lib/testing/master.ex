@@ -57,7 +57,7 @@ defmodule Testing.Master do
     t =
       Task.async(fn ->
         Enum.reduce_while(1..300, false, fn _, _ ->
-          Process.sleep(500)
+          Process.sleep(200)
           if node_name in Node.list(), do: {:cont, false}, else: {:halt, true}
         end)
       end)
@@ -85,7 +85,7 @@ defmodule Testing.Master do
     node_name = Cluster.node_name(node)
 
     {:ok, _} =
-      Task.start(fn ->
+      Task.start_link(fn ->
         Logger.debug("Starting node #{node}")
         System.shell("elixir --name #{Atom.to_string(node_name)} -S mix run --no-halt")
       end)
@@ -95,7 +95,7 @@ defmodule Testing.Master do
         Enum.reduce_while(1..300, false, fn _, _ ->
           node_list = Node.list()
           Node.connect(node_name)
-          Process.sleep(500)
+          Process.sleep(200)
           if node_name in node_list, do: {:halt, true}, else: {:cont, false}
         end)
       end)

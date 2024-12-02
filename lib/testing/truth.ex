@@ -2,7 +2,7 @@ defmodule Testing.Truth do
   use GenServer
   require Logger
 
-  @table_size 100_000
+  @table_size 10000
 
   def start_link(_) do
     GenServer.start_link(__MODULE__, :ok, name: __MODULE__)
