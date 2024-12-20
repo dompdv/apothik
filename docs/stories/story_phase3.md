@@ -2,7 +2,6 @@
 title: Distributed applications with Elixir, a beginners' journey - Part 3
 ---
 
-
 # Phase 3 : Ajout de redondance de stockage pour garantir la conservation des données malgré la perte de machine
 
 Soyons honnêtes, le contenu de cette phase a été choisi au départ de notre aventure, sans connaître le sujet. En réalité, nous avons bien senti la grande différence de difficulté en l'abordant. Jusqu'ici, les choses semblaient relativement faciles, même si nous sommes conscients que nous sommes probablement passés à côté de difficultés nombreuses qui ne manqueraient pas d'apparaître dans un vrai contexte de production. Mais, reconnaissons le, nous n'avons eu jusqu'à présent qu'à rajouter une petite couche de code qui tire parti des possibilités toutes faites fournies par la BEAM.
@@ -343,7 +342,7 @@ Mais peut-être que nous pourrions nous concentrer sur les qualités attendues d
 
 Et c'est le principal morceau de sagesse que nous a procuré notre travail jusqu'ici. **Il faut avant tout préciser clairement les qualités attendues de l'application distribuée.**. Chaque qualité se payant très cher.
 
-A ce sujet, il nous revient  que nous avons lu un jour un fameux théorême qui explique qu'il est mathématiquement impossible **de tout avoir à la fois**: le [théorême CAP](https://en.wikipedia.org/wiki/CAP_theorem). Et ce ne doit pas le seul théorême d'impossibilité.
+A ce sujet, il nous revient que nous avons lu un jour un fameux théorême qui explique qu'il est mathématiquement impossible **de tout avoir à la fois**: le [théorême CAP](https://en.wikipedia.org/wiki/CAP_theorem). Et ce ne doit pas le seul théorême d'impossibilité.
 
 En application distribuée, "le beurre et l'argent du beurre" est encore plus inatteignable que d'habitude.
 
@@ -770,6 +769,8 @@ Magique! On a une propagation automatique sur tous les noeuds. Les totaux sont b
 
 Maintenant, tuons 2 noeuds si de la donnée est perdue:
 ```
+8> Master.kill(0)
+:ok
 9> Master.kill(1)
 :ok
 10> Master.sum_stat
