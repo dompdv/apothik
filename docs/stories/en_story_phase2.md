@@ -1,25 +1,24 @@
 ---
-title: A la découverte des applications distribuées avec Elixir - Partie 2
+title: Discovering Distributed Applications with Elixir - Part 2
 ---
 
-<a href="en_story_phase1.html"> Partie 1</a>
-<a href="en_story_phase3.html"> Partie 3</a>
+<a href="en_story_phase1.html"> Part 1</a>
+<a href="en_story_phase3.html"> Part 3</a>
 
 
-## Phase 2 : Un Cache distribué, sans redondance, avec un cluster dynamique
+## Phase 2: A Distributed Cache, Without Redundancy, with a Dynamic Cluster
 
-### Comment enlever une machine d'un cluster ?
+### How to Remove a Machine from a Cluster?
 
-Une première tentative avec [`Node.stop/0`](https://hexdocs.pm/elixir/Node.html#stop/0).
+A first attempt with [`Node.stop/0`](https://hexdocs.pm/elixir/Node.html#stop/0).
 ```
 % ./scripts/start_master.sh
 1>  :rpc.call(:"apothik_1@127.0.0.1", Node, :stop, [])
 {:error, :not_allowed} 
 ```
-Ca ne marche pas. Nous aurions dû lire la documentation avec plus d'attention car cela ne fonctionne qu'avec des noeuds 
-lancés avec `Node.start/3` et pas des noeuds lancés en ligne de commande.
+It doesn't work. We should have read the documentation more carefully because it only works with nodes started with `Node.start/3` and not nodes started from the command line.
 
-En fait, c'est [`System.stop/0`](https://hexdocs.pm/elixir/System.html#stop/1) qui fait l'affaire:
+In fact, it's [`System.stop/0`](https://hexdocs.pm/elixir/System.html#stop/1) that does the job:
 ```
 2> :rpc.call(:"apothik_1@127.0.0.1", System, :stop, [])
 :ok
@@ -27,7 +26,7 @@ En fait, c'est [`System.stop/0`](https://hexdocs.pm/elixir/System.html#stop/1) q
 [{:badrpc, :nodedown}, 0, 0, 0, 0]
 ```
 
-Essayons de remplir le cache
+Let's try to fill the cache
 ```
 5> Master.fill(1, 5000)
 :ok
@@ -35,8 +34,8 @@ Essayons de remplir le cache
 [{:badrpc, :nodedown}, 0, 0, 0, 0]
 ```
 
-Le cache n'est pas rempli ?? Après réflexion, c'est normal. `Master.fill(1,5000)` essaie de le remplir via le noeud 1 que nous avons arrêté!
-Recommençons depuis le début. On relance le cluster dans le premier terminal `% ./scripts/start_cluster.sh`. Et dans le second:
+The cache is not filled?? Upon reflection, it's normal. `Master.fill(1,5000)` tries to fill it via node 1 which we stopped!
+Let's start over. Restart the cluster in the first terminal `% ./scripts/start_cluster.sh`. And in the second:
 ```
 % ./scripts/start_master.sh
 1> Master.fill(2, 5000)
@@ -49,16 +48,16 @@ Recommençons depuis le début. On relance le cluster dans le premier terminal `
 [{:badrpc, :nodedown}, 987, 1050, 993, 947]
 ```
 
-On a bien perdu les 1023 clés du noeud 1.
+We have indeed lost the 1023 keys from node 1.
 
-### Monitorer dynamiquement l'état du serveur
+### Dynamically Monitoring the Server State
 
-Le problème, c'est que le nombre de machines était fixé dans `Apothik.Cluster` avec `@nb_nodes 5`. 
-Ce que l'on souhaite, c'est que la fonction `key_to_node/1` s'adapte automatiquement au nombre de machines qui fonctionnent.
+The problem is that the number of machines was fixed in `Apothik.Cluster` with `@nb_nodes 5`. 
+What we want is for the `key_to_node/1` function to automatically adapt to the number of machines that are running.
 
-Pour cela, il faut que l'on puisse monitorer le fait que des machines sortent ou entrent dans le cluster. C'est possible grâce à la fonction [`:net_kernel.monitor_nodes/1`](https://www.erlang.org/docs/25/man/net_kernel#monitor_nodes-2) qui permet à un processus de s'abonner aux événements du cycle de vie des noeuds.
+To do this, we need to monitor the fact that machines are leaving or joining the cluster. This is possible thanks to the [`:net_kernel.monitor_nodes/1`](https://www.erlang.org/docs/25/man/net_kernel#monitor_nodes-2) function which allows a process to subscribe to node lifecycle events.
 
-Nous faisons évoluer `apothik/cluster.ex` pour monitorer le cluster:
+We update `apothik/cluster.ex` to monitor the cluster:
 ```elixir
 defmodule Apothik.Cluster do
   alias Apothik.Cache
@@ -118,7 +117,7 @@ end
 
 ```
 
-Ce n'est plus une simple librairie mais un `GenServer` qu'il faut lancer dans l'arbre de supervision, depuis `apothik/application.ex`
+It's no longer a simple library but a `GenServer` that needs to be launched in the supervision tree, from `apothik/application.ex`
 ```elixir
 children = [
     {Cluster.Supervisor, [topologies, [name: Apothik.ClusterSupervisor]]},
@@ -127,19 +126,18 @@ children = [
 ]
 ```
 
-Ce `GenServer` maintient la liste des noeuds du cluster (on prend toute la liste de noeuds connectés et on ne retient 
-que ceux dont le nom commence par `apothik`. C'est ce que fait `list_apothik_nodes/0`).
+This `GenServer` maintains the list of nodes in the cluster (we take the entire list of connected nodes and only keep those whose name starts with `apothik`. This is what `list_apothik_nodes/0` does).
 
-Le processus s'abonne aux événements dans `init/1` avec `:net_kernel.monitor_nodes(true)`. Puis il réagit aux événements `{:nodeup, node}` et `{:nodedown, _node}`. A ce stade, nous avons un GenServer qui connait la liste des noeuds du cluster à chaque instant.
+The process subscribes to events in `init/1` with `:net_kernel.monitor_nodes(true)`. Then it reacts to `{:nodeup, node}` and `{:nodedown, _node}` events. At this stage, we have a GenServer that knows the list of nodes in the cluster at any given time.
 
-### Adapter dynamiquement le nombre de machines
+### Dynamically Adapting the Number of Machines
 
-Nous avons choisi (est-ce la meilleure solution, le débat n'est pas tranché entre nous) que cette liste dynamique soit immédiatement communiquée à `Apothik.Cache`. 
-Ce dernier évolue:
-- son état est maintenant un couple `{liste de noeud du cluster, memoire cache}`. Voir l'initialisation dans `init/1`
-- les fonctions `get` etc sont adaptées pour tenir compte de ce changement de structure de l'état
-- une fonction `update_nodes/1` permet de mettre à jour la liste des noeuds. Elle est appelée par `Apothik.Cluster` à chaque événement
-- la fonction `key_to_node/1` a bien changé. Elle n'est plus exécutée par le code appelant, mais exécutée dans le processus `Apothik.Cache`.
+We have chosen (is it the best solution, the debate is not settled among us) that this dynamic list is immediately communicated to `Apothik.Cache`. 
+The latter evolves:
+- its state is now a tuple `{list of cluster nodes, cache memory}`. See the initialization in `init/1`
+- the `get` etc functions are adapted to take into account this change in state structure
+- an `update_nodes/1` function allows updating the list of nodes. It is called by `Apothik.Cluster` at each event
+- the `key_to_node/1` function has indeed changed. It is no longer executed by the calling code, but executed in the `Apothik.Cache` process.
 ```elixir
 defmodule Apothik.Cache do
   use GenServer
@@ -200,7 +198,7 @@ defmodule Apothik.Cache do
 end
 ```
 
-Commentons un peu plus en détail
+Let's comment a bit more in detail
 ```elixir
   def handle_call({:key_to_node, k}, _from, {nodes, _mem} = state) do
     node = Enum.at(nodes, :erlang.phash2(k, length(nodes)))
@@ -208,13 +206,13 @@ Commentons un peu plus en détail
   end
 ```
 
-`phash2` renvoie un nombre entre 0 et le nombre de noeuds du cluster - 1. 
-Ce nombre ne correspond plus directement à un nom de serveur mais à un indice dans la liste de noeuds. On voit bien que la même clé avant et après le départ d'un serveur a toutes les chances de ne pas se retrouver au même endroit.
+`phash2` returns a number between 0 and the number of cluster nodes - 1. 
+This number no longer directly corresponds to a server name but to an index in the list of nodes. We can see that the same key before and after a server leaves is very likely to end up in a different place.
 
 
-### Un petit essai: enlever une machine
+### A Small Test: Removing a Machine
 
-Pour se simplifier la vie, on ajoute dans `.iex.exs`
+To simplify our lives, we add in `.iex.exs`
 ```elixir
   def kill(i) do
     :rpc.call(:"apothik_#{i}@127.0.0.1", System, :stop, [0])
@@ -225,7 +223,7 @@ Pour se simplifier la vie, on ajoute dans `.iex.exs`
 
 ```
 
-On relance le cluster (`/scripts/start_cluster.sh) et on se lance dans des expériences:
+We restart the cluster (`/scripts/start_cluster.sh) and start experimenting:
 ```
  % ./scripts/start_master.sh
 1> Master.fill(1,5000)
@@ -246,11 +244,10 @@ On relance le cluster (`/scripts/start_cluster.sh) et on se lance dans des expé
 8056
 ```
 
-Après avoir rempli le cache avec 5000 valeurs, on supprime le noeud 2. On a bien perdu environ 1000 valeurs (996 pour être précis). On reremplit le cache avec les mêmes 5000 valeurs. On voit alors qu'il n'y a pas 5000 valeurs en plus. En effet, certaines clés étaient au bon endroit. Il y a eu création de 8056-4004=4052 d'entrées dans la mémoire du cache, ce qui signifie que 5000-4052= 948 valeurs n'ont pas migré de noeud. C'est un peu normal, car lorsqu'on est passé de 5 à 4 machines, les clés se sont retrouvées rebalancées de façon aléatoire. Il y avait donc une probabilité de 20% (ou de 25%, je laisse les commentateurs nous dire) que des clés soient au bon endroit.
+After filling the cache with 5000 values, we remove node 2. We have indeed lost about 1000 values (996 to be precise). We refill the cache with the same 5000 values. We then see that there are not 5000 additional values. Indeed, some keys were in the right place. There were 8056-4004=4052 entries created in the cache memory, which means that 5000-4052= 948 values did not migrate to a different node. This is somewhat normal, as when we went from 5 to 4 machines, the keys were randomly rebalanced. There was therefore a 20% (or 25%, I'll let the commentators tell us) probability that some keys were in the right place.
+### Second Attempt: Adding a Machine
 
-### Deuxième essai: ajouter une machine
-
-Maintenant, nous pouvons faire l'expérience inverse, c'est à dire ajouter une machine. On repart de 0, en relançant le cluster dans un terminal `./scripts/start_cluster.sh` et, dans un autre terminal:
+Now, we can do the reverse experiment, i.e., adding a machine. Let's start from scratch by restarting the cluster in one terminal with `./scripts/start_cluster.sh` and, in another terminal:
 ``` 
 % ./scripts/start_master.sh 
 1> Master.kill(2)
@@ -261,9 +258,9 @@ Maintenant, nous pouvons faire l'expérience inverse, c'est à dire ajouter une 
 [{1, 1228}, {2, {:badrpc, :nodedown}}, {3, 1290}, {4, 1228}, {5, 1254}]
 ```
 
-On a rempli le cache sur un cluster à 4 noeuds. Maintenant, on ouvre encore un autre terminal pour relancer le noeud `apothik_2` que l'on vient d'arrêter: `elixir --name apothik_2@127.0.0.1 -S mix run --no-halt`
+We have filled the cache on a 4-node cluster. Now, let's open another terminal to restart the `apothik_2` node that we just stopped: `elixir --name apothik_2@127.0.0.1 -S mix run --no-halt`
 
-On revient dans le terminal du master:
+Back in the master terminal:
 ```
 4> Master.stat
 [  {1, 1228},  {2, 0},  {3, 1290},  {4, 1228},  {5, 1254}]
@@ -272,23 +269,23 @@ On revient dans le terminal du master:
 6> Master.stat
 [  {1, 2032},  {2, 996},  {3, 2027},  {4, 2027},  {5, 1970}]
 ```
-C'est positif: le noeud a bien été réintégré au cluster automatiquement! Le but est donc atteint.
+This is positive: the node has been automatically reintegrated into the cluster! The goal is achieved.
 
-On constate bien un rebalancement aléatoire des clés sur les 5 noeuds, ce qui conduit les noeuds à garder en mémoire des clés inutiles (environ 1000).
+We can see a random rebalancing of keys across the 5 nodes, which leads the nodes to keep unnecessary keys in memory (about 1000).
 
-On vous laisse essayer d'ajouter une nouvelle machine `apothik_6` et observer ce qui se passe.
+We leave it to you to try adding a new machine `apothik_6` and observe what happens.
 
-### Interlude: nettoyer un peu
+### Interlude: Cleaning Up a Bit
 
-Nous sommes allés au plus vite quand nous avons ajouté le suivi des noeuds qui entrent et sortent du cluster. Souvenez-vous, `Apothik.Cluster` qui suit les entrées et sorties de noeuds dans le cluster informe `Apothik.Cache` à chaque changement. Celui-ci est un `GenServer` qui conserve l'état du cluster dans son état.
+We went as fast as possible when we added node tracking to the cluster. Remember, `Apothik.Cluster` tracks nodes entering and leaving the cluster and informs `Apothik.Cache` of each change. The latter is a `GenServer` that maintains the cluster state in its state.
 
-Mais cela conduit à quelque chose de très laid: à chaque fois que l'on fait une demande au cache, on fait une demande au process `Apothik.Cache` pour qu'il calcule le noeud pour la clé via un `GenServer.call`.
+But this leads to something very ugly: every time we make a request to the cache, we make a request to the `Apothik.Cache` process to calculate the node for the key via a `GenServer.call`.
 
-Précisément, lorsque l'on lance `:rpc.call(:"apothik_1@127.0.0.1", Apothik.Cache, :get, [:a_key])` du master, un process est lancé sur `apothik_1` pour exécuter le code `Apothik.Cache.get/1`. Ce process demande alors au process nommé `Apothik.Cache` sur le noeud `apothik_1` sur quel noeud est stocké la clé `:a_key` (supposons par exemple le noeud `2`) puis demande au process `Apothik.Cache` du noeud `apothik_2` la valeur stockée pour `a_key`. Cette valeur est alors envoyée au process appelant du master qui exécute le `:rpc`. C'est assez vertigineux que tout cela fonctionne sans effort. La magie d'Erlang, une fois de plus.
+Specifically, when we run `:rpc.call(:"apothik_1@127.0.0.1", Apothik.Cache, :get, [:a_key])` from the master, a process is launched on `apothik_1` to execute the `Apothik.Cache.get/1` code. This process then asks the process named `Apothik.Cache` on the `apothik_1` node which node stores the key `:a_key` (let's say node `2`), then asks the `Apothik.Cache` process on node `apothik_2` for the value stored for `a_key`. This value is then sent to the calling process on the master that executes the `:rpc`. It's quite dizzying that all this works effortlessly. The magic of Erlang, once again.
 
-Mais cet aller-retour initial de `key_to_node/1` peut être évité. Il faudrait que l'on puisse stocker des informations accessibles par tous les process du noeud. La solution existe depuis longtemps dans l'univers Erlang. C'est le fameux [Erlang Term Storage, dit `ets`](https://www.erlang.org/docs/23/man/ets). 
+But this initial round trip of `key_to_node/1` can be avoided. We need to store information accessible by all processes on the node. The solution has long existed in the Erlang world. It's the famous [Erlang Term Storage, or `ets`](https://www.erlang.org/docs/23/man/ets).
 
-Après adaptation, le cache ressemble à ça:
+After adaptation, the cache looks like this:
 ```elixir
 defmodule Apothik.Cache do
   use GenServer
@@ -348,14 +345,14 @@ defmodule Apothik.Cache do
 end
 ```
 
-Notez, dans `init/1`:
+Note, in `init/1`:
 ```elixir 
 :ets.new(:cluster_nodes_list, [:named_table, :set, :protected])
 :ets.insert(:cluster_nodes_list, {:cluster_nodes, Cluster.get_state()})
 ```
-Nous utilisons une table nommée `:cluster_nodes_list`, dans laquelle seul le process créateur peut écrire mais qui est accessible par tous les processus du noeud. C'est le sens de l'option `:protected`. Dans cette table, qui se comporte comme une `map`, nous avons une seule clé `:cluster_nodes_list` qui contient la liste des noeuds du cluster. 
+We use a named table `:cluster_nodes_list`, in which only the creator process can write but which is accessible by all processes on the node. This is the meaning of the `:protected` option. In this table, which behaves like a `map`, we have a single key `:cluster_nodes_list` that contains the list of cluster nodes.
 
-Nous sommes arrivés à notre but, car `key_to_node/1` peut s'exécuter directement:
+We have achieved our goal, as `key_to_node/1` can now execute directly:
 ```elixir
 defp key_to_node(k) do
     [{_, nodes}] = :ets.lookup(:cluster_nodes_list, :cluster_nodes)
@@ -363,23 +360,23 @@ defp key_to_node(k) do
 end
 ```
 
-On vous laisse vérifier que tout marche bien. Fin de l'interlude !
+We leave it to you to verify that everything works well. End of the interlude!
 
-### Critique du fonctionnement actuel et solution possible
+### Critique of the Current Functionality and Possible Solution
 
-Quelque chose ne nous plait pas. L'arrivée ou la sortie d'un noeud dans le cluster est un cataclysme. Toutes les clés sont rebalancées. Cela conduit à un cache qui va subitement baisser en performance à chaque fois qu'un tel événement survient, car les clés ne seront plus disponibles. Et à avoir des mémoires pleines de clés inutiles. Finalement, un événement qui devrait être local, voire insignifiant dans le cas d'un très grand cluster, chamboule la totalité du cluster. Comment rendre la distribution des clés  moins sensible à la structure du cluster ?
+Something doesn't sit right with us. The arrival or departure of a node in the cluster is catastrophic. All keys are rebalanced. This leads to a cache that will suddenly drop in performance each time such an event occurs, as the keys will no longer be available. Additionally, the memory will be filled with unnecessary keys. Ultimately, an event that should be local, or even insignificant in the case of a very large cluster, disrupts the entire cluster. How can we make the distribution of keys less sensitive to the cluster's structure?
 
-Après discussion entre nous et quelques pages de bloc-notes, une solution se forme. Comment souvent en informatique, la solution est d'ajouter un niveau d'indirection.
+After discussing among ourselves and jotting down a few pages of notes, a solution is forming. As is often the case in computing, the solution is to add a level of indirection.
 
-L'idée est de se donner des jetons ("tokens") (pour fixer les idées, prenons 1000 tokens, numérotés de 0 à 999). Nous allons distribuer les clés sur les tokens et non les machines, avec quelque chose comme `:erlang.phash2(k, @nb_tokens)`. Ce nombre de tokens est fixe. Il n'y a pas création ou suppression de tokens à l'arrivée ou à l'ajout d'un serveur dans le cluster. Les tokens sont distribués sur les machines. L'arrivée ou le départ d'une machine va conduire à une redistribution de tokens. Mais nous contrôlons cette redistribution, donc nous pouvons faire qu'elle affecte de façon minimale le rebalancement des clés.
+The idea is to use tokens (let's fix the idea with 1000 tokens, numbered from 0 to 999). We will distribute the keys on the tokens and not the machines, with something like `:erlang.phash2(k, @nb_tokens)`. This number of tokens is fixed. There is no creation or deletion of tokens when a server joins or leaves the cluster. The tokens are distributed across the machines. The arrival or departure of a machine will lead to a redistribution of tokens. But we control this redistribution, so we can ensure it minimally affects the rebalancing of keys.
 
-### Mise en oeuvre de la solution
+### Implementation of the Solution
 
-Première remarque, `Apothik.Cluster` ne change pas. Sa responsabilité est de suivre l'état du cluster et de prévenir `Apothik.Cache`. Point final.
+First remark, `Apothik.Cluster` does not change. Its responsibility is to track the state of the cluster and notify `Apothik.Cache`. End of story.
 
-A l'initialisation du cache, nous distribuons équitablement les `@nb_tokens` sur les machines. Avec 5 machines et 1000 tokens, `apothik_1` va recevoir les tokens de 0 à 199, etc. Les jetons sont stockés dans la table `:ets` en associant le nom du noeud à sa liste de jetons avec un `:ets.insert(:cluster_nodes_list, {node, tokens})`.
+At the initialization of the cache, we distribute the `@nb_tokens` equally among the machines. With 5 machines and 1000 tokens, `apothik_1` will receive tokens from 0 to 199, etc. The tokens are stored in the `:ets` table by associating the node name with its list of tokens using `:ets.insert(:cluster_nodes_list, {node, tokens})`.
 
-Le premier point important est `key_to_node/1`. On trouve d'abord le token associé à la clé. Puis on parcourt les noeuds jusqu'à trouver celui auquel est associé le token. Voici ce que cela donne:
+The first important point is `key_to_node/1`. We first find the token associated with the key. Then we go through the nodes until we find the one associated with the token. Here is what it looks like:
 ```elixir
   defp key_to_node(k) do
     landing_token = :erlang.phash2(k, @nb_tokens)
@@ -391,11 +388,11 @@ Le premier point important est `key_to_node/1`. On trouve d'abord le token assoc
   end
 ```
 
-Le deuxième point est la gestion des événements d'arrivée et sortie. La première étape est de déterminer quel type d'événement (arrivée ou départ). Cela se fait dans `def handle_call({:update_nodes, nodes}, _from, state)` en comparant la nouvelle liste de noeud fournie à celle présente dans la table `ets`.
+The second point is the management of arrival and departure events. The first step is to determine the type of event (arrival or departure). This is done in `def handle_call({:update_nodes, nodes}, _from, state)` by comparing the new list of nodes provided to the one present in the `ets` table.
 
-Quand un noeud est supprimé du cluster, ses tokens sont distribués de façon la plus égale possible sur les autres noeuds. Quand un noeud est ajouté dans le cluster, on retire le même nombre de tokens de chaque noeud pour l'apporter au nouveau. Le nombre de token retiré est calculé pour que le nombre de tokens soit distribué de façon égale après la redistribution.
+When a node is removed from the cluster, its tokens are distributed as equally as possible among the other nodes. When a node is added to the cluster, we remove the same number of tokens from each node to give to the new one. The number of tokens removed is calculated so that the number of tokens is equally distributed after the redistribution.
 
-Voici ce que cela donne (le code, un peu commenté néammoins, n'est pas très élégant, il mériterait probablement une passe de nettoyage):
+Here is what it looks like (the code, although somewhat commented, is not very elegant and would probably benefit from a cleanup pass):
 ```elixir
 defmodule Apothik.Cache do
   use GenServer
@@ -519,9 +516,9 @@ defmodule Apothik.Cache do
 end
 ```
 
-(notez que le `split_evenly/2` a été ajouté car probablement mauvais usage de `Enum.chunk_every/3` nous faisait perdre des tokens. Parfois, il est plus facile de coder sa solution).
+(note that `split_evenly/2` was added because probably incorrect usage of `Enum.chunk_every/3` was causing us to lose tokens. Sometimes, it's easier to code your own solution).
 
-On ajoute dans `.iex.exs`de quoi vérifier comment bougent les tokens:
+We add in `.iex.exs` to check how the tokens move:
 ```elixir 
   def get_tokens(i) do
     :rpc.call(:"apothik_#{i}@127.0.0.1", Apothik.Cache, :get_tokens, [])
@@ -532,7 +529,7 @@ On ajoute dans `.iex.exs`de quoi vérifier comment bougent les tokens:
   end
 ```
 
-Momentanément, on change le nombre de tokens `@nb_tokens 10`.
+Temporarily, we change the number of tokens to `@nb_tokens 10`.
 ```
 % ./scripts/start_master.sh
 1> Master.get_tokens(1)
@@ -545,14 +542,14 @@ Momentanément, on change le nombre de tokens `@nb_tokens 10`.
 ]
 ```
 
-On remet `@nb_tokens 1000` et on relance tout:
+We set `@nb_tokens 1000` back and restart everything:
 ```
 % ./scripts/start_master.sh
 1> Master.check_tokens(1)
 1000
 ```
 
-Ca marche, maintenant que se passe-t-il si on enlève un noeud ?
+It works, now what happens if we remove a node?
 
 ```
 2> Master.fill(1,5000)
@@ -569,7 +566,7 @@ Ca marche, maintenant que se passe-t-il si on enlève un noeud ?
 1000
 ```
 
-Dans un autre terminal, on relance `apothik_2`: `% elixir --name apothik_2@127.0.0.1 -S mix run --no-halt`. En revenant dans master:
+In another terminal, we restart `apothik_2`: `% elixir --name apothik_2@127.0.0.1 -S mix run --no-halt`. Back in the master terminal:
 ```
 8> Master.stat
 [  {1, 1265},  {2, 0},  {3, 1238},  {4, 1224},  {5, 1273} ]
@@ -583,26 +580,26 @@ Dans un autre terminal, on relance `apothik_2`: `% elixir --name apothik_2@127.0
 [200, 200, 200, 200, 200]
 ```
 
-On n'a pas perdu de token au passage, et ils sont bien répartis équitablement après le retour de `apothik_2`.
+We haven't lost any tokens in the process, and they are evenly distributed after `apothik_2` returns.
 
-Que se passe-t-il dans les mémoires des serveurs? Les clés de `apothik_2` on bien été perdues quand il est mort. Quand on recharge alors le système avec les mêmes clés, on répartit environ 1000 clés sur les autres. Après son retour et un rechargement, on se retrouve avec un surplus de 265+238+224+273=1000 clés. Ce qui est cohérent. 
+What happens in the server memories? The keys of `apothik_2` were indeed lost when it died. When we reload the system with the same keys, we distribute about 1000 keys to the others. After its return and a reload, we end up with a surplus of 265+238+224+273=1000 keys. This is consistent.
 
-### Irruption du "Hash ring" 
+### The Emergence of the "Hash Ring"
 
-Une remarque: nous avons conçu notre système de redistribution de tokens sans trop y réfléchir. Nous soupçonnons d'abord qu'il pourrait dériver (c'est à dire que l'on pourrait s'éloigner d'une répartition équitable. En tout cas, cela reste à tester). Mais surtout, nous nous doutons bien qu'il doit y avoir une approche optimale de distribution des tokens pour garantir un minimum de changements.
+A remark: we designed our token redistribution system without much thought. We first suspect that it could drift (i.e., we could move away from an equitable distribution. In any case, this remains to be tested). But above all, we suspect that there must be an optimal approach to token distribution to ensure minimal changes.
 
-C'est typiquement le moment où l'on se dit : "Je découvre un domaine et je bute sur une question bien compliquée. Des gens plus intelligents ont déjà réfléchi au problème et mis cela dans une librairie". Nous n'avons pas touvé la réponse, mais au moins, nous comprenons un peu la question !
+This is typically the moment when we think: "I'm discovering a domain and stumbling upon a very complicated question. Smarter people have already thought about the problem and put it in a library." We haven't found the answer, but at least we understand the question a bit!
 
-Et bien sûr, la réponse existe.  Nous vous recommandons d'aller voir [libring](https://github.com/bitwalker/libring) ou bien [ex_hash_ring](https://hex.pm/packages/ex_hash_ring) de Discord.
-Elle s'appelle le "Hash ring". L'idée est de s'imaginer que les jetons (numérotés de 0 à 999) sont situés sur un cercle. Chaque noeud va s'occuper d'un arc de cercle de valeurs contigües. C'est d'ailleurs ce que nous avons fait au début, avec `apothik_1` qui s'occupait de l'arc `0..199`, etc. Il suffit de se souvenir d'un seul nombre de référence par noeud, par exemple la borne supérieure de l'arc. Ici, ce serait `199`. `apothik_5` serait à `0` car on raisonne modulo 1000. D'où l'idée du cercle. Pour savoir le noeud qui s'occupe du jeton `n` il suffit de trouver le noeud dont la valeur de référence est la première supérieure à `n`. 
+And of course, the answer exists. We recommend checking out [libring](https://github.com/bitwalker/libring) or [ex_hash_ring](https://hex.pm/packages/ex_hash_ring) from Discord.
+It's called the "Hash ring". The idea is to imagine that the tokens (numbered from 0 to 999) are located on a circle. Each node will take care of an arc of contiguous values. This is what we did initially, with `apothik_1` taking care of the arc `0..199`, etc. We just need to remember a single reference number per node, for example, the upper bound of the arc. Here, it would be `199`. `apothik_5` would be at `0` because we reason modulo 1000. Hence the idea of the circle. To know the node that takes care of token `n`, we just need to find the node whose reference value is the first one greater than `n`.
 
-On peut se demander comment s'assurer d'une bonne répartition des noeuds, c'est à dire qu'ils aient des arcs de cercle de taille comparables. La première idée est d'utiliser la même fonction de hachage, sur le nom du noeud. Mais il y a d'autres raffinements, y compris pour assurer que les arcs de cercles aient des tailles inégales, mais de façon pilotée et voulue.
+One might wonder how to ensure a good distribution of nodes, meaning they have arcs of comparable sizes. The first idea is to use the same hash function on the node name. But there are other refinements, including ensuring that the arcs have unequal sizes, but in a controlled and desired way.
 
-Quand un noeud arrive dans le cluster, on le positionne donc quelque part sur le cercle et il va se partager le travail avec le noeud en charge de l'arc sur lequel il arrive. Si le noeud revient d'entre les morts avec le même nom et que sa position est déterministe par rapport à son nom, il va reprendre la même place, ce qui est optimal.
+When a node joins the cluster, it is positioned somewhere on the circle and will share the work with the node in charge of the arc it lands on. If the node returns from the dead with the same name and its position is deterministic relative to its name, it will take the same place, which is optimal.
 
-Enlevons toutes nos élucubrations de tokens et utilisons `libring` (ajouter `{:libring, "~> 1.7"}` dans les dépendances)
+Let's remove all our token musings and use `libring` (add `{:libring, "~> 1.7"}` in the dependencies).
 
-Voici ce que cela donne:
+Here's what it looks like:
 ```elixir
 defmodule Apothik.Cache do
 
@@ -631,12 +628,11 @@ end
 
 ```
 
-C'est plus simple, n'est-ce-pas ? Bon, pas sûr que notre idée d'utiliser `ets` soit la bonne. En tout cas, ça marche et ça nous suffit pour l'instant.
+It's simpler, isn't it? Well, not sure if our idea of using `ets` is the best. In any case, it works and it's enough for us for now.
 
+### A Brief Summary of Phase 2:
 
-###  Petit récapitulatif de la phase 2:
+We have a distributed system that automatically reacts to nodes joining and leaving the cluster. We also improved the initial solution to make it less sensitive to changes (nodes joining and leaving). By the way, our solution is no longer sensitive to the node name (any node whose name starts with `apothik` can join the cluster).
 
-Nous avons un système distribué qui réagit automatiquement aux arrivées et départs de noeuds dans le cluster. Nous avons aussi amélioré la solution initiale pour le rendre moins sensible aux changements (arrivée et départs de noeuds). Au passage, notre solution n'est plus sensible au nom du noeud (tout noeud dont le nom commence par `apothik` peut rejoindre le cluster).
-
-<a href="en_story_phase1.html"> Partie 1</a>
-<a href="en_story_phase3.html"> Partie 3</a>
+<a href="en_story_phase1.html"> Part 1</a>
+<a href="en_story_phase3.html"> Part 3</a>

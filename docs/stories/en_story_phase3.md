@@ -1,45 +1,45 @@
 ---
-title: A la découverte des applications distribuées avec Elixir - Partie 3
+title: Discovering Distributed Applications with Elixir - Part 3
 ---
 
-<a href="en_story_phase1.html"> Partie 1</a>
-<a href="en_story_phase2.html"> Partie 2</a>
+<a href="en_story_phase1.html"> Part 1</a>
+<a href="en_story_phase2.html"> Part 2</a>
 
-# Phase 3 : Garantir la conservation des données malgré la perte de machine
+# Phase 3: Ensuring Data Preservation Despite Machine Failure
 
-Soyons honnêtes, le contenu de cette phase a été choisi au départ de notre aventure, sans connaître le sujet. En réalité, nous avons bien senti la grande différence de difficulté en l'abordant. Jusqu'ici, les choses semblaient relativement faciles, même si nous sommes conscients que nous sommes probablement passés à côté de difficultés nombreuses qui ne manqueraient pas d'apparaître dans un vrai contexte de production. Mais, reconnaissons le, nous n'avons eu jusqu'à présent qu'à rajouter une petite couche de code qui tire parti des possibilités toutes faites fournies par la BEAM.
+Let's be honest, the content of this phase was chosen at the start of our adventure without knowing the subject. In reality, we felt the significant difference in difficulty when approaching it. Until now, things seemed relatively easy, even though we are aware that we probably missed numerous difficulties that would undoubtedly appear in a real production context. But, let's admit it, we have only had to add a small layer of code that takes advantage of the ready-made possibilities provided by the BEAM.
 
-Nous n'allons pas raconter toutes nos tentatives et nos errements car ce serait long et fastidieux, mais plutôt tenter de présenter un chemin de découverte du problème (pas forcément de la solution, d'ailleurs) qui soit passablement linéaire.
+We are not going to recount all our attempts and errors because it would be long and tedious, but rather try to present a somewhat linear path of discovering the problem (not necessarily the solution, by the way).
 
-## Redondance, vous avez dit redondance ?
+## Redundancy, you said redundancy?
 
-Notre approche est un peu naïve : si on stocke plusieurs fois la données (redondance), on se dit intuitivement qu'on doit pouvoir la retrouver en cas de perte d'un noeud. 
+Our approach is a bit naive: if we store the data multiple times (redundancy), we intuitively think we should be able to retrieve it in case of a node failure.
 
-Essayons déjà de la stocker plusieurs fois et on verra si on peut la retrouver après. Pour se simplifier la vie, revenons dans le cas d'un cluster statique (nombre de machines constant hors moments de pannes) et oublions donc les notions de `HashRing` de la phase 2. Pour fixer les idées, prenons 5 machines comme initialement.
+Let's first try to store it multiple times and see if we can retrieve it afterward. To simplify our lives, let's go back to the case of a static cluster (constant number of machines except during failures) and therefore forget the notions of `HashRing` from phase 2. To set the ideas, let's take 5 machines as initially.
 
-Comment choisir sur quelle machine stocker la donnée et stocker les copies ? 
+How to choose on which machine to store the data and store the copies?
 
-Au début, influencés par cette façon de poser le problème, nous sommes partis de l'idée d'un noeud "maître" et de "réplicas". Par exemple, un maître et 2 réplicas. Dans cette hypothèse, la donnée est écrite 3 fois. 
+Initially, influenced by this way of posing the problem, we started with the idea of a "master" node and "replicas." For example, one master and 2 replicas. In this hypothesis, the data is written 3 times.
 
-Mais est-ce que cette dissymétrie entre rôles de maître et réplicas est finalement une bonne idée ? Que se passe-t-il si le maître tombe ? Il faudrait alors se rappeler quel noeud est le nouveau, et que cette connaissance se répande correctement dans le cluster tout entier à chaque événement (perte et retour). Et finalement, à quoi bon?
+But is this asymmetry between the roles of master and replicas ultimately a good idea? What happens if the master fails? We would then have to remember which node is the new master and ensure that this knowledge spreads correctly throughout the entire cluster with each event (loss and return). And ultimately, what's the point?
 
-Ces tâtonnements ont fait émerger une idée beaucoup plus simple, celle de **groupe**. 
+These gropings led to a much simpler idea, that of a **group**.
 
-Un groupe est un ensemble de noeuds définis et fixes, qui ont des rôles symétriques au sein du groupe. Voici ce que nous avons choisi. Dans le cas d'un cluster de 5 noeuds numérotés de 0 à 4, nous avons aussi 5 groupes numérotés de 0 à 4. Le groupe 0 aura les noeuds 0,1 & 2. Le groupe 4 aura les noeuds 4,0 & 1. De façon générale, le groupe `n` a les noeuds `n+1` et `n+2` modulo 5. Inversement, le noeud 0 appartiendra donc au groupe 0, 4 & 3. 
+A group is a defined and fixed set of nodes that have symmetrical roles within the group. Here is what we chose. In the case of a cluster of 5 nodes numbered from 0 to 4, we also have 5 groups numbered from 0 to 4. Group 0 will have nodes 0, 1 & 2. Group 4 will have nodes 4, 0 & 1. Generally, group `n` has nodes `n+1` and `n+2` modulo 5. Conversely, node 0 will belong to groups 0, 4 & 3.
 
-En résumé, tout groupe a 3 noeuds et tout noeud appartient à 3 groupes. Cela se traduit dans le code par:
+In summary, every group has 3 nodes, and every node belongs to 3 groups. This translates into code as:
 ```elixir
 defp nodes_in_group(group_number) do
-n = Cluster.static_nb_nodes()
-[group_number, rem(group_number + 1 + n, n), rem(group_number + 2 + n, n)]
+  n = Cluster.static_nb_nodes()
+  [group_number, rem(group_number + 1 + n, n), rem(group_number + 2 + n, n)]
 end
 
 defp groups_of_a_node(node_number) do
-n = Cluster.static_nb_nodes()
-[node_number, rem(node_number - 1 + n, n), rem(node_number - 2 + n, n)]
+  n = Cluster.static_nb_nodes()
+  [node_number, rem(node_number - 1 + n, n), rem(node_number - 2 + n, n)]
 end
 ```
-Petite parenthèse, nous avons adapté le code de `Apothik.Cluster`. Voici les éléments principaux: 
+A small parenthesis, we adapted the code of `Apothik.Cluster`. Here are the main elements:
 ```elixir
 defmodule Apothik.Cluster do
   alias Apothik.Cache
@@ -61,18 +61,18 @@ defmodule Apothik.Cluster do
 end
 ```
 
-Une clé est alors assignée à un **groupe** et **non** à un noeud. La fonction `key_to_node/1` devient:
+A key is then assigned to a **group** and **not** to a node. The function `key_to_node/1` becomes:
 ```elixir
 defp key_to_group_number(k), do: :erlang.phash2(k, Cluster.static_nb_nodes())
 ```
 
-## Ecritures multiples
+## Multiple Writes
 
-Que va-t-il se passer quand on écrit une valeur dans le cache ? On va l'écrire 3 fois.
+What happens when we write a value to the cache? We write it three times.
 
-Tout d'abord, on peut envoyer l'ordre d'écriture à n'importe quel noeud (rappelons que l'on peut s'adresser au cache de n'importe quel noeud du cluster). Celui-ci va alors déterminer le groupe, puis retenir un noeud au hasard dans le groupe, sauf s'il se trouve que c'est lui-même auquel cas il se privilégie (petite optimisation). 
+First, we can send the write command to any node (remember that we can address the cache of any node in the cluster). That node will identify the group, then pick a random node in that group, unless it happens to be itself, in which case it chooses itself (a small optimization).
 
-Voici ce que cela donne (attention, dans ce texte, l'ordre des fonctions est guidé par la compréhension et ne suit pas nécessairement l'ordre dans le code lui-même)
+Here is what it looks like (note that in this text, the function order is guided by understanding and does not necessarily follow the exact code order):
 
 ```elixir
   def put(k, v) do
@@ -103,9 +103,9 @@ Voici ce que cela donne (attention, dans ce texte, l'ordre des fonctions est gui
   end
 ```
 
-Notez que l'on n'a pas besoin de garder l'état du cluster par ailleurs. Nous avons une topologie statique et basée sur les noms, donc `Node.list/1` est suffisant pour nous renseigner sur l'état de tel ou tel noeud.
+Note that we don’t need to keep extra state about the cluster. We have a static topology based on names, so `Node.list/1` is enough to tell us a node’s status.
 
-A présent, le coeur du sujet, l'écriture multiple.
+Now for the core topic: multiple writes.
 ```elixir
   def handle_call({:put, k, v}, _from, state) do
     k
@@ -118,9 +118,9 @@ A présent, le coeur du sujet, l'écriture multiple.
   end
 ```
 
-Tout d'abord, on identifie les **autres** noeuds du groupe qui sont en fonction et on lance `put_as_replica/4` sur chacun (je sais pas si vous êtes comme nous, mais on adore les pipelines avec des belles séries de `|>` qui se lisent comme un roman). Ensuite, on modifie l'état du noeud courant avec un classique ` {:reply, :ok, Map.put(state, k, v)}`.
+First, we identify the other nodes in the group that are running and send them a `put_as_replica/3` (we love pipelines with neatly chained `|>` that read like a story). Then, we update the current node’s state with a simple `{:reply, :ok, Map.put(state, k, v)}` call.
 
-Quant à `put_replica/3`, c'est encore plus simple:
+As for `put_as_replica/3`, it is even simpler:
 ```elixir
   def put_as_replica(replica, k, v) do
     GenServer.cast({__MODULE__, Cluster.node_name(replica)}, {:put_as_replica, k, v})
@@ -130,20 +130,20 @@ Quant à `put_replica/3`, c'est encore plus simple:
   end
 ```
 
-## Dans l'enfer du deadlock
+## Entering Deadlock Hell
 
-**Attention, attention** à ce que nous avons subrepticement glissé ici. Ca n'a l'air de rien mais **c'est là que nous basculons dans l'enfer des applications distribuées**.
+Be aware of what we subtly introduced here. It may not look like much, but this is where we enter the world of distributed app complexity.
 
-Touchons en un mot avant d'y revenir. Nous avons utilisé `GenServer.cast`. Et pas `GenServer.call`. Ce qui signifie que nous envoyons une bouteille à la mer pour dire à nos voisins "met à jour ton cache" mais nous n'attendons pas de retour. Rien ne nous garantit que le message a été traité. Nous n'avons pas d'acquittement. Ainsi, les noeuds du groupe n'ont **aucune garantie** d'avoir le même état. 
+We used `GenServer.cast` instead of `GenServer.call`. That means we fire off a message to our neighbors, saying “update your cache,” but we do not wait for a response. We have no acknowledgment that the message was processed. So, group nodes have no guarantee of having the same state.
 
-Pourquoi ne pas mettre un `call`, alors? 
+Why not use `call` then?
 
-C'est ce que nous avons fait au début, naïfs que nous étions (et nous le sommes encore; il faut visiblement des années de déniaisement dans le monde distribué). Mais nous sommes tombé dans l'enfer du **deadlock**. Si deux noeuds du groupe sont simultanément sollicités pour mettre à jour le cache, ils peuvent s'attendre indéfiniment. Dans la réalité, il y a un `timeout` standard, que l'on peut changer dans les options de `GensServer.call`. Mais il lance une exception quand il est atteint. 
+That’s what we did at first, naïve as we were (and we still are, because it obviously takes years of experience with distributed systems). But we fell into the pit of deadlocks. If two group nodes are simultaneously asked to update their caches, they can wait for each other indefinitely. In reality, `GenServer.call` has a default timeout, which can be changed, but it throws an exception once it’s hit.
 
-Ca y est, nous sommes entrés dans la cour des grands. Plus précisément, nous l'apercevons au travers du grillage.
+And that’s it; we’ve stepped into the big leagues—or at least peeked through the fence.
 
-## Récapitulatif et tests
-Voilà ce que ça donne à la fin (notez `get/1`, qui fonctionne comme attendu, et l'absence de `delete` qui serait à l'image de `put`, mais parfois la flemme sort gagnante, voilà tout)
+## Summary and Tests
+Here's what it looks like at the end (note `get/1`, which works as expected, and the absence of `delete`, which would be similar to `put`, but sometimes laziness wins, that's all):
 ```elixir
 defmodule Apothik.Cache do
   use GenServer
@@ -222,7 +222,7 @@ defmodule Apothik.Cache do
 end
 ```
 
-Vite, vérifions que ça marche. `./scripts/start_cluster.sh` dans un terminal, et faison dans un autre:
+Quick, let's check that it works. `./scripts/start_cluster.sh` in one terminal, and let's do in another:
 ```
  % ./scripts/start_master.sh
 1> Master.put(1, :a_key, 100)
@@ -245,11 +245,11 @@ Vite, vérifions que ça marche. `./scripts/start_cluster.sh` dans un terminal, 
 15006
 ```
 
-On voit bien que `:a_key` est sur 3 noeuds. On accède bien au cache de n'importe quel noeud et les données sont bien présentes et quand on a chargé les données sur le cluster, on a bien un total de `15006` valeurs stockées, qui est bien `5002 * 3`.
+We can see that `:a_key` is on 3 nodes. We can access the cache from any node and the data is present, and when we loaded the data onto the cluster, we have a total of `15006` stored values, which is indeed `5002 * 3`.
 
-## Récupération de données
+## Data Recovery
 
-Que se passe-t-il en cas de perte de noeud ? Eh bien, nous perdons les données, pardi !
+What happens in case of a node failure? Well, we lose the data, of course!
 ```
 % ./scripts/start_master.sh
 1> Master.fill(1,5000)
@@ -260,14 +260,14 @@ Que se passe-t-il en cas de perte de noeud ? Eh bien, nous perdons les données,
 [  {0, 2992},  {1, 2967},  {2, {:badrpc, :nodedown}},  {3, 3029},  {4, 2978}]
 ```
 
-Dans un autre terminal, `./scripts/start_instance.sh 2` (oui, nous avons écrit un petit script équivalent à `elixir --name apothik_$1@127.0.0.1 -S mix run --no-halt`) et revenons dans le `master`:
+In another terminal, `./scripts/start_instance.sh 2` (yes, we wrote a small script equivalent to `elixir --name apothik_$1@127.0.0.1 -S mix run --no-halt`) and return to the `master`:
 ```
 4> Master.stat
 [{0, 2992}, {1, 2967}, {2, 0}, {3, 3029}, {4, 2978}]
 ```
-`apothik_2` est bien vide comme prévu.
+`apothik_2` is indeed empty as expected.
 
-Pour récupérer la donnée, essayons une approche toute simple: quand un noeud démarre, il interroge autour de lui pour récupérer l'information manquante. Cela s'appelle "se réhydrater".
+To recover the data, let's try a simple approach: when a node starts, it queries its neighbors to retrieve the missing information. This is called "rehydration."
 ```elixir
   def init(_args) do
     me = Node.self() |> Cluster.number_from_node_name()
@@ -290,13 +290,13 @@ Pour récupérer la donnée, essayons une approche toute simple: quand un noeud 
   end
 ```
 
-A l'initialisation du noeud, celui-ci demande leur contenu à tous les noeuds de tous les groupes auquel il appartient (sauf à lui-même). Attention, pas exactement tout leur contenu, uniquement leur contenu au titre de l'appartenance à un groupe fixé. Par exemple, si le noeud 0, au titre du groupe 0, demande au noeud 2 son contenu, il ne veut pas récupérer le contenu du noeud 2 au titre de son appartenance au groupe 2 (qui est constitué des noeuds 2,3 & 4, donc pas du noeud 0). 
+At the node's initialization, it requests the content from all nodes in all groups it belongs to (except itself). Note, not exactly all their content, only their content for a specific group. For example, if node 0, for group 0, requests the content from node 2, it does not want to retrieve node 2's content for group 2 (which consists of nodes 2, 3 & 4, not node 0).
 
-Aussi, le `{:i_am_thirsty, g, self()})` indique-t-il le groupe au titre duquel se fait la demande, ainsi que l'adresse de retour `self()`. Le noeud répondant va devoir filtrer les valeurs de sa mémoire, c'est le sens de `key_to_group_number(k) == group`. 
+Thus, `{:i_am_thirsty, g, self()})` indicates the group for which the request is made, as well as the return address `self()`. The responding node will need to filter the values in its memory, hence `key_to_group_number(k) == group`.
 
-A la réception, c'est à dire à la réhydratation (`:drink`), on fusionne simplement les `map`. 
+Upon reception, i.e., during rehydration (`:drink`), we simply merge the maps.
 
-Est ce que ça marche? On relance le cluster, puis:
+Does it work? Restart the cluster, then:
 ```
 % ./scripts/start_master.sh
 1> Master.fill(1,5000)
@@ -308,71 +308,71 @@ Est ce que ça marche? On relance le cluster, puis:
 4> Master.stat
 [ {0, 2992},  {1, 2967},  {2, {:badrpc, :nodedown}},  {3, 3029},  {4, 2978}]
 ```
-et dans un autre terminal `% ./scripts/start_instance.sh 2`. Retour dans le `master`
+and in another terminal `% ./scripts/start_instance.sh 2`. Back in the `master`
 ```
 5> Master.stat
 [{0, 2992}, {1, 2967}, {2, 3034}, {3, 3029}, {4, 2978}]
 ```
 
-## Ca marche ...mais que c'est moche, mon dieu, que c'est moche
+## It works ...but it's so ugly, my god, it's so ugly
 
-Il y a tellement de choses criticables qu'on ne sait pas par où commencer. 
+There are so many things to criticize that we don't know where to start.
 
-Lançons nous: 
-- ça n'est pas très économe : le noeud peut recevoir plusieurs réponses. Pour y rémédier, il pourrait par exemple ignorer les retours dès qu'il a rafraichi les données d'un groupe. Mais même dans ce cas, le mal est fait et chaque noeud du groupe a déjà concocté une réponse, ou bien est en train de le faire. Donc il faut être probablement plus subtil
-- on envoie en un seul message un tiers de la mémoire du noeud. Dans le cas d'un vrai cache, cette opération n'est sans doute pas possible (quelle est la taille maximale d'un message dans la BEAM ? nous l'ignorons, mais elle doit être limitée). De plus, il nous semble bien que l'envoi d'un message implique une recopie de son contenu avant envoi (pas sûr pour les processus inter-noeud, mais ce serait handicapant). En outre, l'opération risque de bloquer tous les noeuds qui répondent pendant un temps sensible, ce qui n'est pas acceptable dans le cas d'un cluster en forte activité
-- et surtout, que se passe-t-il si en parallèle le cache est modifié? Les modifications (`put`) peuvent intervenir dans n'importe quelle ordre de séquence. Rien ne garantit que les retours des noeuds d'un même groupe (ceux captés dans `:drink`) offrent la même vision du monde. On peut tout à fait imaginer des scénarios où ils écrasent des données toutes neuves avec leurs anciennes valeurs.
+Let's dive in:
+- It's not very efficient: the node can receive multiple responses. To remedy this, it could, for example, ignore returns as soon as it has refreshed the data of a group. But even in this case, the damage is done, and each node in the group has already concocted a response or is in the process of doing so. So, it probably needs to be more subtle.
+- We send a third of the node's memory in a single message. In the case of a real cache, this operation is probably not possible (what is the maximum size of a message in the BEAM? We don't know, but it must be limited). Moreover, it seems to us that sending a message involves copying its content before sending (not sure for inter-node processes, but it would be a handicap). Furthermore, the operation is likely to block all responding nodes for a noticeable time, which is unacceptable in the case of a highly active cluster.
+- And above all, what happens if the cache is modified in parallel? Modifications (`put`) can occur in any sequence order. Nothing guarantees that the returns from the nodes of the same group (those captured in `:drink`) offer the same view of the world. One can easily imagine scenarios where they overwrite new data with their old values.
 
-Et c'est sans compter les soucis réseau, avec des latences et des déconnections qui peuvent isoler des noeuds pendant quelques millisecondes et désynchroniser l'état du cluster sur un ou plusieurs groupes.
+And that's not counting network issues, with latencies and disconnections that can isolate nodes for a few milliseconds and desynchronize the cluster's state on one or more groups.
 
-## Est-ce que ça marche vraiment?
+## Does it really work?
 
-C'est à ce moment-là que nous sommes partis sur une pente que les informaticiens connaissent bien, et qui a été parfaitement imagée par [l'écureuil du film "l'age de glâce"](https://en.wikipedia.org/wiki/Scrat). Nous avons essayé de colmater la première brêche, puis la deuxième, mais la première en a ouvert une troisième, etc.
+This is when we went down a path that computer scientists know well, perfectly illustrated by [Scrat from the movie "Ice Age"](https://en.wikipedia.org/wiki/Scrat). We tried to patch the first breach, then the second, but the first opened a third, and so on.
 
-Car, oui, nous avions toujours notre ambition initiale en tête. Vous vous souvenez "Ajout de redondance de stockage pour garantir la conservation des données malgré la perte de machine". Peut-être que le **"garantir"** était fortement présomptueux, après tout. 
+Because, yes, we still had our initial ambition in mind. Remember, "Adding storage redundancy to ensure data preservation despite machine failure." Maybe the **"ensure"** was highly presumptuous, after all.
 
-Et là nous est revenue la phrase de [Johanna Larsonn](https://www.youtube.com/watch?v=7yU9mvwZKoY), qui disait à peu près "Attention, les applications distribuées c'est extrêment difficile mais il y a quand même des cas où l'on peut se lancer". 
+And then we remembered the phrase by [Johanna Larsonn](https://www.youtube.com/watch?v=7yU9mvwZKoY), who said something like, "Be careful, distributed applications are extremely difficult, but there are still cases where you can get started."
 
-Le mot "garantir" nous a entrainé trop loin. 
+The word "ensure" led us too far.
 
-Après toutes ces erreurs, nous avons compris que ce qui fait la difficulté d'un système distribué, ce sont les **qualités** que l'on en attend. Nous avons voulu inconsciemment offrir à notre cache distribué une partie des qualités d'une base de données distribuée, ce qui est clairement au-delà de nos faibles forces de débutants.
+After all these mistakes, we understood that what makes a distributed system difficult are the **qualities** expected from it. We unconsciously wanted to offer our distributed cache some of the qualities of a distributed database, which is clearly beyond our beginner's capabilities.
 
-En résumé, **non**, cela ne marche pas. En tout cas si l'on ambitionne d'aller au bout de notre phase 3 avec son titre ronflant et présomptueux.
+In summary, **no**, it doesn't work. At least not if we aim to complete our phase 3 with its grandiose and presumptuous title.
 
-## Peut-on viser plus bas ?
+## Can we aim lower?
 
-Mais peut-être que nous pourrions nous concentrer sur les qualités attendues d'un **cache**, et pas plus.
+But maybe we could focus on the qualities expected from a **cache**, and nothing more.
 
-Et c'est le principal morceau de sagesse que nous a procuré notre travail jusqu'ici. **Il faut avant tout préciser clairement les qualités attendues de l'application distribuée.**. Chaque qualité se payant très cher.
+And that's the main piece of wisdom our work has provided us so far. **We must first clearly specify the expected qualities of the distributed application.** Each quality comes at a high cost.
 
-A ce sujet, il nous revient que nous avons lu un jour un fameux théorême qui explique qu'il est mathématiquement impossible **de tout avoir à la fois**: le [théorême CAP](https://en.wikipedia.org/wiki/CAP_theorem). Et ce ne doit pas le seul théorême d'impossibilité.
+In this regard, we recall reading a famous theorem one day that explains it is mathematically impossible **to have everything at once**: the [CAP theorem](https://en.wikipedia.org/wiki/CAP_theorem). And it must not be the only impossibility theorem.
 
-En application distribuée, "le beurre et l'argent du beurre" est encore plus inatteignable que d'habitude.
+In distributed applications, "having your cake and eating it too" is even more unattainable than usual.
 
-Revenons à notre entreprise de coupe claire dans nos ambitions. Ce que nous voulons pour notre **cache**, c'est 
-- minimiser les "loupés" ("cache miss" en franglais), c'est à dire le nombre de fois où le cache ne peut fournir la valeur
-- garantir dans la plupart des cas "normaux" que la valeur retournée est bien la dernière fournie au cluster. A ce stade, nous disons "cas normaux" car notre échec tout frais nous a appris à être modeste et qu'on se doute bien que "tous les cas" sera bien trop difficile pour nous.
+Let's return to our endeavor of cutting down our ambitions. What we want for our **cache** is:
+- Minimize "misses" ("cache miss" in Franglais), that is, the number of times the cache cannot provide the value.
+- Ensure in most "normal" cases that the value returned is indeed the last one provided to the cluster. At this point, we say "normal cases" because our recent failure has taught us to be modest, and we suspect that "all cases" will be far too difficult for us.
 
-## Essayons de nous réhydrater gorgée par gorgée
+## Let's Try Rehydrating Sip by Sip
 
-Revenons sur nos pas: supprimons notre méthode d'hydratation massive au démarrage, ainsi que les `handle` associés . Vous vous souvenez, ce truc:
+Let's backtrack: remove our massive hydration method at startup, as well as the associated `handle` functions. Remember this thing:
 ```elixir
 for g <- groups_of_a_node(me), peer <- nodes_in_group(g), peer != me, alive?(peer) do
   GenServer.cast({__MODULE__, Cluster.node_name(peer)}, {:i_am_thirsty, g, self()})
 end
 ```
 
-Notre idée est de commencer de façon extrêmement modeste. Au démarrage du noeud, rien de particulier ne se passe, pas de réhydratation. Le noeud va réagir aux `put`et `put_as_replica` comme d'habitude. En revanche, il va gérer les `get` de façon différente. S'il possède la clé en cache, il renvoie évidemment la valeur associée. En revanche, s'il n'a pas la clé, il va demander à un noeud du groupe la valeur, la stocker et la retourner. 
+Our idea is to start extremely modestly. At node startup, nothing special happens, no rehydration. The node will react to `put` and `put_as_replica` as usual. However, it will handle `get` differently. If it has the key in cache, it obviously returns the associated value. If it doesn't have the key, it will ask a node in the group for the value, store it, and return it.
 
-Cette approche assure une réhydratation progressive sur la base de la demande constatée.
+This approach ensures progressive rehydration based on observed demand.
 
-Nous allons avoir besoin que l'état de notre `GenServer` soit plus riche que simplement les données de cache. Nous ajoutons :
+We will need the state of our `GenServer` to be richer than just the cache data. We add:
 ```elixir
 defstruct cache: %{}, pending_gets: %{}
 ```
-`cache` sont pour les données de cache, `pending_gets` est expliqué plus bas. Toutes les méthodes doivent être légèrement et trivialement adaptées pour transformer ce qui fut `state` en `state.cache`.
+`cache` is for the cache data, `pending_gets` is explained below. All methods need to be slightly and trivially adapted to transform what was `state` into `state.cache`.
 
-Voici à quoi ressemble la méthode `get`:
+Here's what the `get` method looks like:
 ```elixir
   def handle_call({:get, k}, from, state) do
     %{cache: cache, pending_gets: pending_gets} = state
@@ -396,15 +396,15 @@ Voici à quoi ressemble la méthode `get`:
   end
 ```
 
-Nous avons utilisé ici un mécanisme plus sophistiqué (nous laissons aux lecteurs le soin de nous dire si nous n'aurions pas pu utilement l'utiliser auparavant): un `:no_reply` en réponse d'un `GenServer.handle_call/3`. Notre objectif est que cette requête (aller chercher la valeur chez `peer`) ne soit pas bloquante pour le noeud qui se réhydrate. C'est une possibilité de `GenServer`: on peut renvoyer `:noreply`, qui laisse le process appelant en attente, mais libère l'exécution. Par la suite, la réponse est réalisée par un [`GenServer.reply/2`](https://hexdocs.pm/elixir/GenServer.html#reply/2). Allez voir l'exemple de la documentation, c'est parlant. Il faut néammoins se rappeler des appels en attentes, en premier lieu les `pid` des processus appelants.
+Here we used a more sophisticated mechanism (we leave it to the readers to tell us if we could have used it earlier): a `:no_reply` in response to a `GenServer.handle_call/3`. Our goal is for this request (fetching the value from `peer`) not to block the node that is rehydrating. This is a possibility of `GenServer`: you can return `:noreply`, which leaves the calling process waiting but frees up execution. Later, the response is made by a [`GenServer.reply/2`](https://hexdocs.pm/elixir/GenServer.html#reply/2). Check out the example in the documentation, it's enlightening. However, you need to remember the pending calls, primarily the `pid` of the calling processes.
 
-En résumé (dans le cas d'une clé absente):
-- sélectionner au hasard un réplica bien réveillé. 
-- lui demander en asynchrone la valeur recherchée (et lui indiquer le `pid` retour)
-- stocker la requête dans `pending_gets`. Au début, nous avions utilisé une `map` pour `pending_gets` du type `%{k => pid}`. Mais il y aurait eu un problème en cas d'appel quasi simultané de deux processus différents sur la même clé. 
-- mettre l'appelant en attente. 
+In summary (in the case of a missing key):
+- randomly select an awake replica.
+- asynchronously ask it for the desired value (and provide the return `pid`)
+- store the request in `pending_gets`. Initially, we used a `map` for `pending_gets` of the type `%{k => pid}`. But there would be a problem in case of almost simultaneous calls from two different processes on the same key.
+- put the caller on hold.
 
-De son côté, le replica répond très simplement, toujours en asynchrone:
+On its side, the replica responds very simply, always asynchronously:
 ```elixir
   def handle_cast({:hydrate_key, from, k}, %{cache: cache} = state) do
     :ok = GenServer.cast(from, {:drink_key, k, cache[k]})
@@ -412,7 +412,7 @@ De son côté, le replica répond très simplement, toujours en asynchrone:
   end
 ```
 
-Et quand on revient:
+And when it returns:
 ```elixir
   def handle_cast({:drink_key, k, v}, state) do
     %{cache: cache, pending_gets: pending_gets} = state
@@ -432,12 +432,12 @@ Et quand on revient:
   end
 ```
 
-Les étapes:
-- séparer les demandes qui concernaient la clé, des autres demandes
-- envoyer un `reply` aux processus appelants
-- si le cache n'a pas été mis à jour entre-temps (avec un soupçon que la donnée est plus fraîche), on le met à jour
+The steps:
+- separate the requests concerning the key from other requests
+- send a `reply` to the calling processes
+- if the cache has not been updated in the meantime (with a suspicion that the data is fresher), update it
 
-Essayons, avec dans un terminal `./scripts/start_cluster.sh` et dans l'autre: 
+Let's try, with `./scripts/start_cluster.sh` in one terminal and in the other:
 ```
 % ./scripts/start_master.sh
 1> Master.put(4,"hello","world")
@@ -449,7 +449,7 @@ Essayons, avec dans un terminal `./scripts/start_cluster.sh` et dans l'autre:
 4> Master.stat
 [{0, {:badrpc, :nodedown}}, {1, 1}, {2, 0}, {3, 0}, {4, 1}]
 ```
-On tue le noeud 0 qui fait partie du groupe 4. Dans un autre terminal, on le relance `./scripts/start_instance.sh 0`, puis: 
+We kill node 0, which is part of group 4. In another terminal, restart it with `./scripts/start_instance.sh 0`, then:
 ```
 5> Master.stat
 [{0, 0}, {1, 1}, {2, 0}, {3, 0}, {4, 1}]
@@ -465,27 +465,28 @@ On tue le noeud 0 qui fait partie du groupe 4. Dans un autre terminal, on le rel
 %{cache: %{"hello" => "world"}, __struct__: Apothik.Cache, pending_gets: []}
 ```
 
-Au retour, le noeud est vide. Si l'on s'adress au noeud 4, il va pouvoir répondre car il a la clé disponible. Cela ne change pas le contenu du noeud 0. En revanche, si on s'adresse au noeud 0, on voit bien qu'il obtient la réponse et qu'il se réhydrate. La liste des `pending_gets` a bien été vidée.
+Upon return, the node is empty. If we address node 4, it will be able to respond because it has the key available. This does not change the content of node 0. However, if we address node 0, we see that it gets the response and rehydrates. The list of `pending_gets` has indeed been emptied.
 
-Entre parenthèse, c'est tellement commode qu'on ajoute à `.iex.exs` :
+By the way, it's so convenient that we add to `.iex.exs`:
 ```elixir
   def inside(i) do
     :rpc.call(:"apothik_#{i}@127.0.0.1", :sys, :get_state, [Apothik.Cache])
   end
 ```
 
-Où en sommes nous?
-- on évite les loupés
-- l'état a l'air raisonnablement maintenu cohérent (nous ne sommes pas sûr de nous, hein)
-- pas besoin d'avoir un régime de fonctionnement différent ("je me réhydrate", "ça y est, je suis prêt")
-- on a une perte de performance à chaque appel sur une clé non hydratée. Cette perte ira diminuant avec la réhydratation du noeud
-- et une perte de performance quand le cache est interrogé sur une clé normalement absente (qui n'a pas été positionnée auparavant). En effet, il faut que 2 noeuds se concertent pour répondre "on n'a pas cela en magasin".
+Where are we?
+- we avoid misses
+- the state seems reasonably maintained coherent (we are not sure, though)
+- no need to have a different operating mode ("I'm rehydrating", "I'm ready")
+- there is a performance loss for each call on a non-hydrated key. This loss will decrease with the node's rehydration
+- and a performance loss when the cache is queried for a normally absent key (which was not set previously). Indeed, it takes two nodes to agree to respond "we don't have that in stock."
 
-## Hydratation au démarrage
 
-Maintenant que l'on s'est fait la main, et en complément, regardons si l'on ne peut pas améliorer notre système d'hydratation au démarrage. Vous vous souvenez que l'on demandait à tous les noeuds de tous les groupes d'envoyer en une fois les données. Là, nous allons demander à un noeud aléatoire de chaque groupe d'envoyer un petit paquet de données. A la réception, on demandera un autre paquet, et ainsi de suite jusqu'à épuisement du stock. 
+## Hydration at Startup
 
-Au démarrage du noeud, on lance les demandes:
+Now that we've got the hang of it, let's see if we can improve our hydration system at startup. You remember that we asked all nodes in all groups to send the data all at once. Now, we will ask a random node from each group to send a small batch of data. Upon receipt, we will request another batch, and so on until the stock is exhausted.
+
+At node startup, we initiate the requests:
 ```elixir 
   def init(_args) do
     peers = pick_a_live_node_in_each_group()
@@ -494,9 +495,9 @@ Au démarrage du noeud, on lance les demandes:
   end
 ```
 
-`ask_for_hyration` est la demande de paquet de données. Elle signifie "donne moi un paquet de données de taille `@batch_size`, à partir de l'indice `0`, au titre du groupe `group`".
+`ask_for_hydration` is the request for a batch of data. It means "give me a batch of data of size `@batch_size`, starting from index `0`, for the group `group`."
 
-La fonction `pick_a_live_node_in_each_group` fait ce que son nom indique. Il y a une petite astuce pour ne retenir qu'un noeud par groupe: 
+The function `pick_a_live_node_in_each_group` does what its name suggests. There is a small trick to select only one node per group:
 ```elixir
   def pick_a_live_node_in_each_group() do
     me = Node.self() |> Cluster.number_from_node_name()
@@ -504,7 +505,7 @@ La fonction `pick_a_live_node_in_each_group` fait ce que son nom indique. Il y a
   end
 ```
 
-On utilise des `cast` pour les requêtes et réponses.
+We use `cast` for requests and responses.
 ```elixir
   def ask_for_hydration(replica, group, start_index, batch_size) do
     GenServer.cast(
@@ -514,7 +515,7 @@ On utilise des `cast` pour les requêtes et réponses.
   end
 ```
 
-A la réception, le noeud (celui qui donne à boire) va ordonner ses clés (uniquement celle du groupe demandé), utiliser cet ordre pour les numéroter et renvoyer un paquet. Il renvoie le prochain index et un drapeau pour indiquer que c'est le dernier paquet, ce qui permettra au noeud appelant de s'arrêter de le solliciter. 
+Upon receipt, the node (the one providing the data) will order its keys (only those of the requested group), use this order to number them, and send a batch. It returns the next index and a flag to indicate that it is the last batch, which will allow the requesting node to stop soliciting it.
 ```elixir
   def handle_cast({:i_am_thirsty, group, from, start_index, batch_size}, %{cache: cache} = state) do
     filtered_on_group = Map.filter(cache, fn {k, _} -> key_to_group_number(k) == group end)
@@ -528,14 +529,14 @@ A la réception, le noeud (celui qui donne à boire) va ordonner ses clés (uniq
   end
 ```
 
-Le `hydrate` est aussi un `cast`
+The `hydrate` is also a `cast`
 ```elixir
   def hydrate(peer_pid, group, cache_slice, next_index, last_batch) do
     GenServer.cast(peer_pid, {:drink, group, cache_slice, next_index, last_batch})
   end
 ```
 
-A la réception:
+Upon receipt:
 ```elixir
   def handle_cast({:drink, group, payload, next_index, final}, %{cache: cache} = state) do
     if not final do
@@ -547,9 +548,9 @@ A la réception:
     {:noreply, %{state | cache: Map.merge(cache, filtered_payload)}}
   end
 ```
-Si l'on n'a pas terminé, on demande le paquet suivant à un replica au hasard. Dans tous les cas on met à jour le cache, en ne retenant que les clés inconnues parmi le paquet fourni.
+If we have not finished, we request the next batch from a random replica. In any case, we update the cache, retaining only the unknown keys among the provided batch.
 
-Testons. Dans un terminal ` ./scripts/start_cluster.sh` et dans l'autre:
+Let's test. In one terminal `./scripts/start_cluster.sh` and in another:
 ```
 % ./scripts/start_master.sh
 1> Master.fill(1, 5000)
@@ -562,33 +563,33 @@ Testons. Dans un terminal ` ./scripts/start_cluster.sh` et dans l'autre:
 [{0, 2992}, {1, {:badrpc, :nodedown}}, {2, 3034}, {3, 3029}, {4, 2978}]
 ```
 
-On relance le noeud 1 dans un autre terminal `% ./scripts/start_instance.sh 1` et, dans "master", les clés sont revenues:
+Restart node 1 in another terminal `% ./scripts/start_instance.sh 1` and, in "master", the keys are back:
 ```
 5> Master.stat
 [{0, 2992}, {1, 2967}, {2, 3034}, {3, 3029}, {4, 2978}]
 ```
 
-Petit bilan:
-- on a une gentille remontée en charge du noeud à son retour, sans dégrader trop les performances du cluster
-- le processus est assez fragile car une perte de message l'arrête définitivement. A vrai dire, notre première version était plus complexe et l'état du processus de remontée en charge était suivi par le noeud lui-même, ouvrant la possiblité de reprise sur erreur. Ca n'est pas compliqué à implémenter
-- le système d'itération (`keys = filtered_on_group |> Map.keys() |> Enum.sort() |> Enum.slice(start_index, batch_size)`) est à revoir dans les cas de caches de grande taille.
-- on n'a toujours pas géré la question de la suppression des clés (`delete`) et on a toujours la flemme de le faire. 
+Quick summary:
+- we have a gentle recovery of the node upon its return, without degrading the cluster's performance too much
+- the process is quite fragile because a lost message stops it permanently. In fact, our first version was more complex, and the state of the recovery process was tracked by the node itself, allowing for error recovery. It's not complicated to implement
+- the iteration system (`keys = filtered_on_group |> Map.keys() |> Enum.sort() |> Enum.slice(start_index, batch_size)`) needs to be reviewed for large cache sizes.
+- we still haven't addressed the issue of key deletion (`delete`), and we are still too lazy to do it.
 
-Le plus important: a-t-on bien des états cohérents entre les noeuds du même groupe ? En effet, le cluster continue de vivre, notamment des `put` surviennent pendant le processus d'hydratation. Pas facile de l'assurer car les scénarios sont multiples. Par exemple:
-- si une clé est ajoutée parmi les paquets non encore envoyés, ça n'est pas problématique. Elle fera partie des paquets suivants. Et là, on a deux cas: soit le `put` a déjà atteint le noeud qui remonte et la clé sera ignorée à la réception, soit la clé sera mise à jour par la réception du paquet, puis mise à jour par le message du `put`.
-- si une clé est ajoutée parmi les clés déjà reçue, ça n'est pas problématique non plus. Le `put` modifiera la valeur dans le cache. Et comme il y a décalage des clés ordonnées, on renverra une clé déjà envoyée au prochain paquet, ce qui n'est n'a pas d'impact sur la cohérence. 
+The most important question: do we have consistent states between nodes in the same group? Indeed, the cluster continues to live, especially with `put` operations occurring during the hydration process. It's not easy to ensure because the scenarios are numerous. For example:
+- if a key is added among the batches not yet sent, it's not problematic. It will be part of the following batches. And here, we have two cases: either the `put` has already reached the recovering node, and the key will be ignored upon receipt, or the key will be updated by the batch receipt, then updated by the `put` message.
+- if a key is added among the keys already received, it's not problematic either. The `put` will modify the value in the cache. And since there is a shift in the ordered keys, we will resend an already sent key in the next batch, which has no impact on consistency.
 
-Ce qu'il faut retenir de cette analyse partielle (et peut-être inexacte), c'est qu'elle est difficile à mener. Il faut envisager tous les scénarios d'arrivées de message sur chacun des processus, sans surtout préjuger d'un ordre logique ou chronologique, et examiner si la cohérence du cache est endommagée dans chacun des scénarios.
+What to take away from this partial (and possibly inaccurate) analysis is that it is difficult to conduct. We must consider all scenarios of message arrivals on each process, without assuming any logical or chronological order, and examine if the cache consistency is damaged in each scenario.
 
-## Et si on faisait appel à des experts ?
+## What if we call in the experts?
 
-Nous ne pouvons pas nous départir de l'idée que nous avons probablement trouvé des solutions assez frustres à des questions bien compliquées. 
+We can't shake the feeling that we've probably found rather crude solutions to very complicated questions.
 
-Comme précédemment, c'est le moment de chercher ce que des gens bien plus experts ont trouvé. La bonne nouvelle, c'est que cela existe, c'est le CRDT (Conflict-free replicated data type). Il s'agit de toute une famille de solutions qui permettent de synchroniser des états dans une configuration distribuée. Une recherche rapide sur internet parle même de "cohérence éventuelle". C'est à dire que, si on ne touche plus au cache, les noeuds vont converger vers le même état au bout d'un certain temps.
+As before, it's time to see what much more knowledgeable people have discovered. The good news is that such solutions exist, specifically CRDTs (Conflict-free Replicated Data Types). These are a whole family of solutions that allow for state synchronization in a distributed configuration. A quick search on the internet even talks about "eventual consistency." This means that if we stop modifying the cache, the nodes will converge to the same state after a certain period.
 
-Bon, nous ne comprenons pas tout en détail, mais nous savons que l'excellent [Derek Kraan](https://github.com/derekkraan) a notamment écrit une librairie qui implémente une variante (les delta-CRDT) pour les besoins de [Horde](https://github.com/derekkraan/horde), une application de supervision et de registre distribuée.
+Well, we don't understand everything in detail, but we know that the excellent [Derek Kraan](https://github.com/derekkraan) has written a library that implements a variant (delta-CRDTs) for the needs of [Horde](https://github.com/derekkraan/horde), a distributed supervision and registry application.
 
-La librairie est [delta_crdt_ex](https://github.com/derekkraan/delta_crdt_ex). Le README est carrément alléchant ! Voici l'exemple de la documentation:
+The library is [delta_crdt_ex](https://github.com/derekkraan/delta_crdt_ex). The README is quite enticing! Here is an example from the documentation:
 
 ```elixir
 {:ok, crdt1} = DeltaCrdt.start_link(DeltaCrdt.AWLWWMap)
@@ -603,18 +604,18 @@ DeltaCrdt.to_map(crdt2)
 %{"CRDT" => "is magic!"}
 ```
 
- Le `DeltaCrdt` est exactement ce que nous voulons: un dictionnaire ! Il suffit de lancer des process `DeltaCrdt`. On présente ses voisins à chaque process. Attention, le lien est monodirectionnel, donc il faut présenter 1 à 2 et 2 à 1.
+The `DeltaCrdt` is exactly what we want: a dictionary! We just need to launch `DeltaCrdt` processes. We introduce their neighbors to each process. Note that the link is unidirectional, so we need to introduce 1 to 2 and 2 to 1.
 
-Bref, il semble que nous allons surtout beaucoup supprimer du code. Et en effet, c'est que nous allons faire !
+In short, it seems that we will mostly delete a lot of code. And indeed, that's what we will do!
 
-## Nommer les processus et les superviser
+## Naming the processes and supervising them
 
-Reprenons: nous avons divisé notre cache en groupes. Chaque groupe est présent sur 3 noeuds. Nous voudrions avoir 3 processus `DeltaCrdt` qui se synchronisent par groupe, chacun sur un noeud différent. Nous décidons de nommer les process liés au groupe `n`:  `apothik_crdt_#{n}`. Par exemple, le groupe `0` sera représenté par 3 process tous nommés `apothik_crdt_0` répartis sur 3 noeuds différents, `apothik_0`, `apothik_1` et `apothik_2`. Il est possible de présenter un voisin sans utiliser de `pid` mais en utilisant la convention `{nom du process, nom du noeud}`: 
+Let's recap: we have divided our cache into groups. Each group is present on 3 nodes. We want to have 3 `DeltaCrdt` processes that synchronize per group, each on a different node. We decide to name the processes related to group `n`: `apothik_crdt_#{n}`. For example, group `0` will be represented by 3 processes all named `apothik_crdt_0` distributed across 3 different nodes, `apothik_0`, `apothik_1`, and `apothik_2`. It is possible to introduce a neighbor without using a `pid` but by using the convention `{process name, node name}`:
 ```elixir 
   DeltaCrdt.set_neighbours(crdt, [{"apothik_crdt_0", :"apothik_1"}])
 ```
 
-Au démarrage d'un noeud, il faut instancier 3 processus, un pour chaque groupe porté par le noeud. Nous décidons de faire porter cette responsibilité par un superviseur.
+At the startup of a node, we need to instantiate 3 processes, one for each group carried by the node. We decide to have a supervisor handle this responsibility.
 
 ```elixir
 defmodule Apothik.CrdtSupervisor do
@@ -639,9 +640,9 @@ defmodule Apothik.CrdtSupervisor do
 end
 ```
 
-Attention, nous ne lançons pas directement un processus `DeltaCrdt` mais `{Apothik.Cache, g}`, nommé `apothik_cache_#{g}`. Nous y revenons ci-dessous.
+Note that we do not directly launch a `DeltaCrdt` process but `{Apothik.Cache, g}`, named `apothik_cache_#{g}`. We will come back to this below.
 
-Et ce superviseur est lancé par l'application (qui lance `libcluster` aussi):
+And this supervisor is launched by the application (which also launches `libcluster`):
 ```elixir
 defmodule Apothik.Application do
 use Application
@@ -660,11 +661,11 @@ use Application
 end
 ```
 
-## Présenter les voisins au bon moment
+## Introducing the neighbors at the right time
 
-Nous devons présenter ses 2 partenaires de jeux à chaque `DeltaCrdt`. Pour insérer ce comportement, nous avons décidé de créer un processus intermédiaire (`Apothik.Cache`) dont la mission est d'instancier le `DeltaCrdt` et de lui présenter ses voisins. Leurs destins seront liés via l'usage de `start_link`. Ainsi, si le process `DeltaCrdt` se termine brusquement, le process `Cache` aussi et le superviseur le relancera.
+We need to introduce the 2 partners to each `DeltaCrdt`. To insert this behavior, we decided to create an intermediate process (`Apothik.Cache`) whose mission is to instantiate the `DeltaCrdt` and introduce its neighbors. Their fates will be linked via the use of `start_link`. Thus, if the `DeltaCrdt` process terminates abruptly, the `Cache` process will too, and the supervisor will restart it.
 
-Cela donne:
+This results in:
 ```elixir
 defmodule Apothik.Cache do
   use GenServer
@@ -690,8 +691,7 @@ defmodule Apothik.Cache do
 end
 ```
 
-D'ailleurs, pour plus de sûreté, nous devons aussi représenter les voisins dès qu'un noeud rejoint le cluster. Cela explique la présence de `:net_kernel.monitor_nodes(true)
-`. Nous ajoutons:
+Moreover, for added security, we must also introduce the neighbors as soon as a node joins the cluster. This explains the presence of `:net_kernel.monitor_nodes(true)`. We add:
 ```elixir
   @impl true
   def handle_info({:nodeup, node}, state) do
@@ -705,11 +705,11 @@ D'ailleurs, pour plus de sûreté, nous devons aussi représenter les voisins d�
 
   def handle_info({:nodedown, node}, state), do: {:noreply, state}
 ```
-Nous avons ajouté un petit délai avant de positionner les voisins, pour laisser le noeud se mettre en route.
+We added a small delay before setting the neighbors to allow the node to start up.
 
-## Changement de l'interface d'accès au cache
+## Changing the cache access interface
 
-Et finalement, les actions fondamentales (`get` et `put`) deviennent:
+Finally, the fundamental actions (`get` and `put`) become:
 ```elixir
   def get(k) do
     group = k |> key_to_group_number()
@@ -723,11 +723,11 @@ Et finalement, les actions fondamentales (`get` et `put`) deviennent:
     DeltaCrdt.put({:"apothik_crdt_#{group}", alive_node}, k, v)
   end
 ```
-Comme d'habitude, la clé donne le groupe en charge. Puis on détermine un noeud du groupe en privilégiant le noeud en cours. Puis nous appelons directement le process `DeltaCrdt` à partir de son nom. Et le tour est joué.
+As usual, the key determines the responsible group. Then we identify a node in the group, favoring the current node. Finally, we directly call the `DeltaCrdt` process by its name. And that's it.
 
-## Essayons
+## Let's Try
 
-Une petite modification d'abord pour récolter les statistiques, dans `Apothik.CrdtSupervisor` en appelant tous les `DeltaCrdt` des groupes du noeud
+First, a small modification to collect statistics in `Apothik.CrdtSupervisor` by calling all the `DeltaCrdt` of the node's groups:
 ```elixir
 def stats() do
   self = Cache.number_from_node_name(Node.self())
@@ -738,8 +738,8 @@ def stats() do
   end
   |> Enum.sum()
 end
-````
-Et dans `.iex.exs`:
+```
+And in `.iex.exs`:
 ```elixir
 def stat(i) do
   :rpc.call(:"apothik_#{i}@127.0.0.1", Apothik.CrdtSupervisor, :stats, [])
@@ -749,7 +749,7 @@ def sum_stat() do
 end
 ```
 
-Comme d'habitude, on lance `./scripts/start_cluster.sh` dans un terminal et dans un autre:
+As usual, start `./scripts/start_cluster.sh` in one terminal and in another:
 ```
 % ./scripts/start_master.sh
 1> Master.sum_stat
@@ -768,9 +768,9 @@ Comme d'habitude, on lance `./scripts/start_cluster.sh` dans un terminal et dans
 {300, [{0, 60}, {1, 62}, {2, 66}, {3, 58}, {4, 54}]}
 ```
 
-Magique! On a une propagation automatique sur tous les noeuds. Les totaux sont bien cohérents !
+Magic! We have automatic propagation across all nodes. The totals are consistent!
 
-Maintenant, tuons 2 noeuds si de la donnée est perdue:
+Now, let's kill 2 nodes to see if data is lost:
 ```
 8> Master.kill(0)
 :ok
@@ -780,18 +780,18 @@ Maintenant, tuons 2 noeuds si de la donnée est perdue:
 {178, [   {0, {:badrpc, :nodedown}}, {1, {:badrpc, :nodedown}}, {2, 66}, {3, 58}, {4, 54}]}
 ```
 
-Et dans deux autres terminaux distinct: `% ./scripts/start_instance.sh 0`pour l'un et `% ./scripts/start_instance.sh 1` pour l'autre. Revenons:
+And in two other separate terminals: `% ./scripts/start_instance.sh 0` for one and `% ./scripts/start_instance.sh 1` for the other. Back to the master:
 ```
 11> Master.sum_stat
 {300, [{0, 60}, {1, 62}, {2, 66}, {3, 58}, {4, 54}]}
 ```
 
-Et voilà ! Les clés sont revenues !
+And there you go! The keys are back!
 
 
-## Ca marche, mais faut pas pousser !
+## It works, but don't push it!
 
-Recommençons à 0 la manipulation (on relance le cluster), et:
+Let's restart the manipulation from scratch (restart the cluster), and:
 ```
 % ./scripts/start_master.sh
 1> Master.fill(1, 10000)
@@ -800,28 +800,27 @@ Recommençons à 0 la manipulation (on relance le cluster), et:
 {18384, [{0, 3564}, {1, 2968}, {2, 3555}, {3, 4148}, {4, 4149}]}
 ```
 
-Ouch ! On n'a pas du tout 30_000 clés comme attendu, mais 18_384. 
+Ouch! We don't have 30,000 keys as expected, but 18,384.
 
-Nous n'allons pas vous expliquer les quelques heures passées à essayer de comprendre ce qui se passe. Il suffit de dire que nous avons consulté internet, les "issues" du repository Github et bien sûr nous nous sommes plongés dans le code. Nous avons compris que  
+We won't explain the few hours spent trying to understand what was happening. Suffice it to say that we consulted the internet, the "issues" of the GitHub repository, and of course, we delved into the code. We understood that 
 ```elixir
 DeltaCrdt.start_link(DeltaCrdt.AWLWWMap, max_sync_size: 30_000, name: crdt_name(g))
 ``` 
-permettait d'aller plus loin. Mais que la synchronisation était tronquée à un certain niveau. Bref, que si on n'avait de trop grosses différences ("delta") dans un temps donné, la propagation ne se faisait pas complètement. Utiliser de la magie, c'est génial tant que tout marche, ça devient de la magie noire quand quelque chose coince.
+allowed us to go further. But the synchronization was truncated at a certain level. In short, if there were too large differences ("delta") in a given time, the propagation was not complete. Using magic is great as long as everything works, but it becomes black magic when something goes wrong.
 
-## Conclusion générale
+## General Conclusion
 
-Quand on fait le bilan, nous avons finalement deux solutions:
-- une solution un peu bricolée, ne traitant sans doute pas les cas compliqués, mais que nous maîtrisons parfaitement et pour laquelle nous avons déjà des pistes d'amélioration identifiées et faisables.
-- une solution faite par des experts, mais qui a des limites que nous ne maîtrisons pas à moins de devenir un peu (beaucoup ?) experts nous-même.
+In summary, we have two solutions:
+- A somewhat makeshift solution that probably doesn't handle complicated cases but is fully under our control, with identified and feasible improvement paths.
+- A solution created by experts, but with limitations that we don't fully understand unless we become somewhat (or very) expert ourselves.
 
-Nous revenons à nouveau à la conclusion que faire des applications distribuées est très délicat, avec un effet de mur: un petit domaine de choses faisables est entouré de murs très hauts dès lors que l'on vise certaines qualités pour l'application distribuée. Il y a deux façons de franchir ces murs. Soit investir massivement en compréhension des algorithmes déjà inventées par de nombreux chercheurs et implémenter ces algorithmes selon son besoin. Soit s'appuyer sur des librairies ou des produits tout faits, mais alors il est indispensable d'en connaitre précisément les domaines de fonctionnement.
-
+We come back to the conclusion that creating distributed applications is very delicate, with a wall effect: a small domain of feasible things is surrounded by very high walls when aiming for certain qualities for the distributed application. There are two ways to overcome these walls. Either invest massively in understanding the algorithms already invented by many researchers and implement these algorithms according to your needs. Or rely on ready-made libraries or products, but then it is essential to know precisely their operating domains.
 
 ## Epilogue
 
-Nous espérons que ces articles vous ont diverti ou inspiré. N'hésitez pas à les commenter, à les corriger ou même à en redemander !
+We hope these articles have entertained or inspired you. Feel free to comment, correct, or even request more!
 
-Olivier et Dominique
+Olivier and Dominique
 
-<a href="en_story_phase1.html"> Partie 1</a>
-<a href="en_story_phase2.html"> Partie 2</a>
+<a href="en_story_phase1.html"> Part 1</a>
+<a href="en_story_phase2.html"> Part 2</a>
