@@ -1,5 +1,5 @@
 ---
-title: Distributed applications with Elixir, a beginners' journey - Part 3
+title: A la découverte des applications distribuées avec Elixir - Partie 3
 ---
 
 # Phase 3 : Ajout de redondance de stockage pour garantir la conservation des données malgré la perte de machine
