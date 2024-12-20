@@ -2,6 +2,7 @@
 title: Discovering Distributed Applications with Elixir - Part 1
 ---
 
+<a href="/">Home</a>
 <a href="en_story_phase2.html"> Part 2</a>
 <a href="en_story_phase3.html"> Part 3</a>
 
@@ -467,5 +468,6 @@ We sent 5000 values into the distributed cache via node 1. We see that the value
 
 We have a cache distributed across 5 machines! Phase 1 accomplished!
 
+<a href="/">Home</a>
 <a href="en_story_phase2.html"> Part 2</a>
 <a href="en_story_phase3.html"> Part 3</a>
