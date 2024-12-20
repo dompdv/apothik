@@ -2,7 +2,10 @@
 title: A la découverte des applications distribuées avec Elixir - Partie 3
 ---
 
-# Phase 3 : Ajout de redondance de stockage pour garantir la conservation des données malgré la perte de machine
+<a href="fr_story_phase1.html"> Partie 1</a>
+<a href="fr_story_phase2.html"> Partie 2</a>
+
+# Phase 3 : Garantir la conservation des données malgré la perte de machine
 
 Soyons honnêtes, le contenu de cette phase a été choisi au départ de notre aventure, sans connaître le sujet. En réalité, nous avons bien senti la grande différence de difficulté en l'abordant. Jusqu'ici, les choses semblaient relativement faciles, même si nous sommes conscients que nous sommes probablement passés à côté de difficultés nombreuses qui ne manqueraient pas d'apparaître dans un vrai contexte de production. Mais, reconnaissons le, nous n'avons eu jusqu'à présent qu'à rajouter une petite couche de code qui tire parti des possibilités toutes faites fournies par la BEAM.
 
@@ -813,6 +816,12 @@ Quand on fait le bilan, nous avons finalement deux solutions:
 
 Nous revenons à nouveau à la conclusion que faire des applications distribuées est très délicat, avec un effet de mur: un petit domaine de choses faisables est entouré de murs très hauts dès lors que l'on vise certaines qualités pour l'application distribuée. Il y a deux façons de franchir ces murs. Soit investir massivement en compréhension des algorithmes déjà inventées par de nombreux chercheurs et implémenter ces algorithmes selon son besoin. Soit s'appuyer sur des librairies ou des produits tout faits, mais alors il est indispensable d'en connaitre précisément les domaines de fonctionnement.
 
-Pour l'heure, essayons de tester notre solution de façon un peu plus extensive.
 
-Fin de la phase 3
+## Epilogue
+
+Nous espérons que ces articles vous ont diverti ou inspiré. N'hésitez pas à les commenter, à les corriger ou même à en redemander !
+
+Olivier et Dominique
+
+<a href="fr_story_phase1.html"> Partie 1</a>
+<a href="fr_story_phase2.html"> Partie 2</a>
