@@ -5,7 +5,7 @@ title: A la découverte des applications distribuées avec Elixir - Partie 1
 <a href="fr_story_phase2.html"> Partie 2</a>
 <a href="fr_story_phase3.html"> Partie 3</a>
 
-# A la découverte des applications distribuées avec Elixir
+# Partie 1 : Un Cache distribué, sans redondance, sur 5 machines fixes
 
 ## Pourquoi ?
 
@@ -26,7 +26,6 @@ Parce que le sujet est difficile, nous ne pouvions pas sauter directement sur no
 - *Phase 1 :* Un Cache distribué, sans redondance, sur 5 machines fixes.
 - *Phase 2 :* Même chose, mais avec un cluster dynamique (ajout et perte de machine). Explorer l'influence des fonctions de répartition des clés.
 - *Phase 3 :* Ajout de redondance de stockage (la clé est recopiée sur plusieurs machines) pour garantir la conservation des données malgré la perte de machine. Gérer un cluster dynamique et des pannes
-- *Phase 4 :* Tester tout cela
 
 Et bien sûr, cela implique de développer des petits outils annexes pour procéder aux expériences: charger le cache, observer l'état des machines, ajouter ou supprimer des machines, etc
 
@@ -474,3 +473,6 @@ Maintenant, remplissons le cache pour voir ce qui se passe:
 On a envoyé 5000 valeurs dans le cache distribué via le noeud 1. On constate que les valeurs ont bien été distribuées assez uniformément sur les 5 noeuds. 
 
 Nous avons un cache distribué sur 5 machines ! Phase 1 accomplie !
+
+<a href="fr_story_phase2.html"> Partie 2</a>
+<a href="fr_story_phase3.html"> Partie 3</a>
