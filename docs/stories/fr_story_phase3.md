@@ -2,7 +2,7 @@
 title: A la découverte des applications distribuées avec Elixir - Partie 3
 ---
 
-<a href="/">Accueil</a>
+<a href="/apothik/">Accueil</a>
 <a href="fr_story_phase1.html"> Partie 1</a>
 <a href="fr_story_phase2.html"> Partie 2</a>
 
@@ -824,6 +824,6 @@ Nous espérons que ces articles vous ont diverti ou inspiré. N'hésitez pas à 
 
 Olivier et Dominique
 
-<a href="/">Accueil</a>
+<a href="/apothik/">Accueil</a>
 <a href="fr_story_phase1.html"> Partie 1</a>
 <a href="fr_story_phase2.html"> Partie 2</a>

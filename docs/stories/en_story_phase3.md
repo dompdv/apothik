@@ -2,7 +2,7 @@
 title: Discovering Distributed Applications with Elixir - Part 3
 ---
 
-<a href="/">Home</a>
+<a href="/apothik/">Home</a>
 <a href="en_story_phase1.html"> Part 1</a>
 <a href="en_story_phase2.html"> Part 2</a>
 
@@ -823,6 +823,6 @@ We hope these articles have entertained or inspired you. Feel free to comment, c
 
 Olivier and Dominique
 
-<a href="/">Home</a>
+<a href="/apothik/">Home</a>
 <a href="en_story_phase1.html"> Part 1</a>
 <a href="en_story_phase2.html"> Part 2</a>

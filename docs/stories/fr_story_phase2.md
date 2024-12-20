@@ -2,7 +2,7 @@
 title: A la découverte des applications distribuées avec Elixir - Partie 2
 ---
 
-<a href="/">Accueil</a>
+<a href="/apothik/">Accueil</a>
 <a href="fr_story_phase1.html"> Partie 1</a>
 <a href="fr_story_phase3.html"> Partie 3</a>
 
@@ -639,6 +639,6 @@ C'est plus simple, n'est-ce-pas ? Bon, pas sûr que notre idée d'utiliser `ets`
 
 Nous avons un système distribué qui réagit automatiquement aux arrivées et départs de noeuds dans le cluster. Nous avons aussi amélioré la solution initiale pour le rendre moins sensible aux changements (arrivée et départs de noeuds). Au passage, notre solution n'est plus sensible au nom du noeud (tout noeud dont le nom commence par `apothik` peut rejoindre le cluster).
 
-<a href="/">Accueil</a>
+<a href="/apothik/">Accueil</a>
 <a href="fr_story_phase1.html"> Partie 1</a>
 <a href="fr_story_phase3.html"> Partie 3</a>

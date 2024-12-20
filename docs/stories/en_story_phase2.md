@@ -2,7 +2,7 @@
 title: Discovering Distributed Applications with Elixir - Part 2
 ---
 
-<a href="/">Home</a>
+<a href="/apothik/">Home</a>
 <a href="en_story_phase1.html"> Part 1</a>
 <a href="en_story_phase3.html"> Part 3</a>
 
@@ -635,6 +635,6 @@ It's simpler, isn't it? Well, not sure if our idea of using `ets` is the best. I
 
 We have a distributed system that automatically reacts to nodes joining and leaving the cluster. We also improved the initial solution to make it less sensitive to changes (nodes joining and leaving). By the way, our solution is no longer sensitive to the node name (any node whose name starts with `apothik` can join the cluster).
 
-<a href="/">Home</a>
+<a href="/apothik/">Home</a>
 <a href="en_story_phase1.html"> Part 1</a>
 <a href="en_story_phase3.html"> Part 3</a>
