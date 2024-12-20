@@ -2,13 +2,14 @@
 title: A la découverte des applications distribuées avec Elixir - Partie 2
 ---
 
+<a href="/">Accueil</a>
 <a href="fr_story_phase1.html"> Partie 1</a>
 <a href="fr_story_phase3.html"> Partie 3</a>
 
 
 ## Phase 2 : Un Cache distribué, sans redondance, avec un cluster dynamique
 
-### Comment enlever une machine d'un cluster ?
+## Comment enlever une machine d'un cluster ?
 
 Une première tentative avec [`Node.stop/0`](https://hexdocs.pm/elixir/Node.html#stop/0).
 ```
@@ -51,7 +52,7 @@ Recommençons depuis le début. On relance le cluster dans le premier terminal `
 
 On a bien perdu les 1023 clés du noeud 1.
 
-### Monitorer dynamiquement l'état du serveur
+## Monitorer dynamiquement l'état du serveur
 
 Le problème, c'est que le nombre de machines était fixé dans `Apothik.Cluster` avec `@nb_nodes 5`. 
 Ce que l'on souhaite, c'est que la fonction `key_to_node/1` s'adapte automatiquement au nombre de machines qui fonctionnent.
@@ -132,7 +133,7 @@ que ceux dont le nom commence par `apothik`. C'est ce que fait `list_apothik_nod
 
 Le processus s'abonne aux événements dans `init/1` avec `:net_kernel.monitor_nodes(true)`. Puis il réagit aux événements `{:nodeup, node}` et `{:nodedown, _node}`. A ce stade, nous avons un GenServer qui connait la liste des noeuds du cluster à chaque instant.
 
-### Adapter dynamiquement le nombre de machines
+## Adapter dynamiquement le nombre de machines
 
 Nous avons choisi (est-ce la meilleure solution, le débat n'est pas tranché entre nous) que cette liste dynamique soit immédiatement communiquée à `Apothik.Cache`. 
 Ce dernier évolue:
@@ -212,7 +213,7 @@ Commentons un peu plus en détail
 Ce nombre ne correspond plus directement à un nom de serveur mais à un indice dans la liste de noeuds. On voit bien que la même clé avant et après le départ d'un serveur a toutes les chances de ne pas se retrouver au même endroit.
 
 
-### Un petit essai: enlever une machine
+## Un petit essai: enlever une machine
 
 Pour se simplifier la vie, on ajoute dans `.iex.exs`
 ```elixir
@@ -248,7 +249,7 @@ On relance le cluster (`/scripts/start_cluster.sh) et on se lance dans des expé
 
 Après avoir rempli le cache avec 5000 valeurs, on supprime le noeud 2. On a bien perdu environ 1000 valeurs (996 pour être précis). On reremplit le cache avec les mêmes 5000 valeurs. On voit alors qu'il n'y a pas 5000 valeurs en plus. En effet, certaines clés étaient au bon endroit. Il y a eu création de 8056-4004=4052 d'entrées dans la mémoire du cache, ce qui signifie que 5000-4052= 948 valeurs n'ont pas migré de noeud. C'est un peu normal, car lorsqu'on est passé de 5 à 4 machines, les clés se sont retrouvées rebalancées de façon aléatoire. Il y avait donc une probabilité de 20% (ou de 25%, je laisse les commentateurs nous dire) que des clés soient au bon endroit.
 
-### Deuxième essai: ajouter une machine
+## Deuxième essai: ajouter une machine
 
 Maintenant, nous pouvons faire l'expérience inverse, c'est à dire ajouter une machine. On repart de 0, en relançant le cluster dans un terminal `./scripts/start_cluster.sh` et, dans un autre terminal:
 ``` 
@@ -278,7 +279,7 @@ On constate bien un rebalancement aléatoire des clés sur les 5 noeuds, ce qui 
 
 On vous laisse essayer d'ajouter une nouvelle machine `apothik_6` et observer ce qui se passe.
 
-### Interlude: nettoyer un peu
+## Interlude: nettoyer un peu
 
 Nous sommes allés au plus vite quand nous avons ajouté le suivi des noeuds qui entrent et sortent du cluster. Souvenez-vous, `Apothik.Cluster` qui suit les entrées et sorties de noeuds dans le cluster informe `Apothik.Cache` à chaque changement. Celui-ci est un `GenServer` qui conserve l'état du cluster dans son état.
 
@@ -365,7 +366,7 @@ end
 
 On vous laisse vérifier que tout marche bien. Fin de l'interlude !
 
-### Critique du fonctionnement actuel et solution possible
+## Critique du fonctionnement actuel et solution possible
 
 Quelque chose ne nous plait pas. L'arrivée ou la sortie d'un noeud dans le cluster est un cataclysme. Toutes les clés sont rebalancées. Cela conduit à un cache qui va subitement baisser en performance à chaque fois qu'un tel événement survient, car les clés ne seront plus disponibles. Et à avoir des mémoires pleines de clés inutiles. Finalement, un événement qui devrait être local, voire insignifiant dans le cas d'un très grand cluster, chamboule la totalité du cluster. Comment rendre la distribution des clés  moins sensible à la structure du cluster ?
 
@@ -373,7 +374,7 @@ Après discussion entre nous et quelques pages de bloc-notes, une solution se fo
 
 L'idée est de se donner des jetons ("tokens") (pour fixer les idées, prenons 1000 tokens, numérotés de 0 à 999). Nous allons distribuer les clés sur les tokens et non les machines, avec quelque chose comme `:erlang.phash2(k, @nb_tokens)`. Ce nombre de tokens est fixe. Il n'y a pas création ou suppression de tokens à l'arrivée ou à l'ajout d'un serveur dans le cluster. Les tokens sont distribués sur les machines. L'arrivée ou le départ d'une machine va conduire à une redistribution de tokens. Mais nous contrôlons cette redistribution, donc nous pouvons faire qu'elle affecte de façon minimale le rebalancement des clés.
 
-### Mise en oeuvre de la solution
+## Mise en oeuvre de la solution
 
 Première remarque, `Apothik.Cluster` ne change pas. Sa responsabilité est de suivre l'état du cluster et de prévenir `Apothik.Cache`. Point final.
 
@@ -587,7 +588,7 @@ On n'a pas perdu de token au passage, et ils sont bien répartis équitablement 
 
 Que se passe-t-il dans les mémoires des serveurs? Les clés de `apothik_2` on bien été perdues quand il est mort. Quand on recharge alors le système avec les mêmes clés, on répartit environ 1000 clés sur les autres. Après son retour et un rechargement, on se retrouve avec un surplus de 265+238+224+273=1000 clés. Ce qui est cohérent. 
 
-### Irruption du "Hash ring" 
+## Irruption du "Hash ring" 
 
 Une remarque: nous avons conçu notre système de redistribution de tokens sans trop y réfléchir. Nous soupçonnons d'abord qu'il pourrait dériver (c'est à dire que l'on pourrait s'éloigner d'une répartition équitable. En tout cas, cela reste à tester). Mais surtout, nous nous doutons bien qu'il doit y avoir une approche optimale de distribution des tokens pour garantir un minimum de changements.
 
@@ -634,9 +635,10 @@ end
 C'est plus simple, n'est-ce-pas ? Bon, pas sûr que notre idée d'utiliser `ets` soit la bonne. En tout cas, ça marche et ça nous suffit pour l'instant.
 
 
-###  Petit récapitulatif de la phase 2:
+##  Petit récapitulatif de la phase 2:
 
 Nous avons un système distribué qui réagit automatiquement aux arrivées et départs de noeuds dans le cluster. Nous avons aussi amélioré la solution initiale pour le rendre moins sensible aux changements (arrivée et départs de noeuds). Au passage, notre solution n'est plus sensible au nom du noeud (tout noeud dont le nom commence par `apothik` peut rejoindre le cluster).
 
+<a href="/">Accueil</a>
 <a href="fr_story_phase1.html"> Partie 1</a>
 <a href="fr_story_phase3.html"> Partie 3</a>

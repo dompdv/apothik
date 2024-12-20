@@ -2,13 +2,14 @@
 title: Discovering Distributed Applications with Elixir - Part 2
 ---
 
+<a href="/">Home</a>
 <a href="en_story_phase1.html"> Part 1</a>
 <a href="en_story_phase3.html"> Part 3</a>
 
 
-## Phase 2: A Distributed Cache, Without Redundancy, with a Dynamic Cluster
+# Phase 2: A Distributed Cache, Without Redundancy, with a Dynamic Cluster
 
-### How to Remove a Machine from a Cluster?
+## How to Remove a Machine from a Cluster?
 
 A first attempt with [`Node.stop/0`](https://hexdocs.pm/elixir/Node.html#stop/0).
 ```
@@ -50,7 +51,7 @@ Let's start over. Restart the cluster in the first terminal `% ./scripts/start_c
 
 We have indeed lost the 1023 keys from node 1.
 
-### Dynamically Monitoring the Server State
+## Dynamically Monitoring the Server State
 
 The problem is that the number of machines was fixed in `Apothik.Cluster` with `@nb_nodes 5`. 
 What we want is for the `key_to_node/1` function to automatically adapt to the number of machines that are running.
@@ -130,7 +131,7 @@ This `GenServer` maintains the list of nodes in the cluster (we take the entire 
 
 The process subscribes to events in `init/1` with `:net_kernel.monitor_nodes(true)`. Then it reacts to `{:nodeup, node}` and `{:nodedown, _node}` events. At this stage, we have a GenServer that knows the list of nodes in the cluster at any given time.
 
-### Dynamically Adapting the Number of Machines
+## Dynamically Adapting the Number of Machines
 
 We have chosen (is it the best solution, the debate is not settled among us) that this dynamic list is immediately communicated to `Apothik.Cache`. 
 The latter evolves:
@@ -210,7 +211,7 @@ Let's comment a bit more in detail
 This number no longer directly corresponds to a server name but to an index in the list of nodes. We can see that the same key before and after a server leaves is very likely to end up in a different place.
 
 
-### A Small Test: Removing a Machine
+## A Small Test: Removing a Machine
 
 To simplify our lives, we add in `.iex.exs`
 ```elixir
@@ -245,7 +246,7 @@ We restart the cluster (`/scripts/start_cluster.sh) and start experimenting:
 ```
 
 After filling the cache with 5000 values, we remove node 2. We have indeed lost about 1000 values (996 to be precise). We refill the cache with the same 5000 values. We then see that there are not 5000 additional values. Indeed, some keys were in the right place. There were 8056-4004=4052 entries created in the cache memory, which means that 5000-4052= 948 values did not migrate to a different node. This is somewhat normal, as when we went from 5 to 4 machines, the keys were randomly rebalanced. There was therefore a 20% (or 25%, I'll let the commentators tell us) probability that some keys were in the right place.
-### Second Attempt: Adding a Machine
+## Second Attempt: Adding a Machine
 
 Now, we can do the reverse experiment, i.e., adding a machine. Let's start from scratch by restarting the cluster in one terminal with `./scripts/start_cluster.sh` and, in another terminal:
 ``` 
@@ -275,7 +276,7 @@ We can see a random rebalancing of keys across the 5 nodes, which leads the node
 
 We leave it to you to try adding a new machine `apothik_6` and observe what happens.
 
-### Interlude: Cleaning Up a Bit
+## Interlude: Cleaning Up a Bit
 
 We went as fast as possible when we added node tracking to the cluster. Remember, `Apothik.Cluster` tracks nodes entering and leaving the cluster and informs `Apothik.Cache` of each change. The latter is a `GenServer` that maintains the cluster state in its state.
 
@@ -362,7 +363,7 @@ end
 
 We leave it to you to verify that everything works well. End of the interlude!
 
-### Critique of the Current Functionality and Possible Solution
+## Critique of the Current Functionality and Possible Solution
 
 Something doesn't sit right with us. The arrival or departure of a node in the cluster is catastrophic. All keys are rebalanced. This leads to a cache that will suddenly drop in performance each time such an event occurs, as the keys will no longer be available. Additionally, the memory will be filled with unnecessary keys. Ultimately, an event that should be local, or even insignificant in the case of a very large cluster, disrupts the entire cluster. How can we make the distribution of keys less sensitive to the cluster's structure?
 
@@ -370,7 +371,7 @@ After discussing among ourselves and jotting down a few pages of notes, a soluti
 
 The idea is to use tokens (let's fix the idea with 1000 tokens, numbered from 0 to 999). We will distribute the keys on the tokens and not the machines, with something like `:erlang.phash2(k, @nb_tokens)`. This number of tokens is fixed. There is no creation or deletion of tokens when a server joins or leaves the cluster. The tokens are distributed across the machines. The arrival or departure of a machine will lead to a redistribution of tokens. But we control this redistribution, so we can ensure it minimally affects the rebalancing of keys.
 
-### Implementation of the Solution
+## Implementation of the Solution
 
 First remark, `Apothik.Cluster` does not change. Its responsibility is to track the state of the cluster and notify `Apothik.Cache`. End of story.
 
@@ -584,7 +585,7 @@ We haven't lost any tokens in the process, and they are evenly distributed after
 
 What happens in the server memories? The keys of `apothik_2` were indeed lost when it died. When we reload the system with the same keys, we distribute about 1000 keys to the others. After its return and a reload, we end up with a surplus of 265+238+224+273=1000 keys. This is consistent.
 
-### The Emergence of the "Hash Ring"
+## The Emergence of the "Hash Ring"
 
 A remark: we designed our token redistribution system without much thought. We first suspect that it could drift (i.e., we could move away from an equitable distribution. In any case, this remains to be tested). But above all, we suspect that there must be an optimal approach to token distribution to ensure minimal changes.
 
@@ -630,9 +631,10 @@ end
 
 It's simpler, isn't it? Well, not sure if our idea of using `ets` is the best. In any case, it works and it's enough for us for now.
 
-### A Brief Summary of Phase 2:
+## A Brief Summary of Phase 2:
 
 We have a distributed system that automatically reacts to nodes joining and leaving the cluster. We also improved the initial solution to make it less sensitive to changes (nodes joining and leaving). By the way, our solution is no longer sensitive to the node name (any node whose name starts with `apothik` can join the cluster).
 
+<a href="/">Home</a>
 <a href="en_story_phase1.html"> Part 1</a>
 <a href="en_story_phase3.html"> Part 3</a>
