@@ -1,6 +1,9 @@
 ---
-title: Distributed applications with Elixir, a beginners' journey - Part 1
+title: A la découverte des applications distribuées avec Elixir - Partie 1
 ---
+
+<a href="fr_story_phase2.html"> Partie 2</a>
+<a href="fr_story_phase3.html"> Partie 3</a>
 
 # A la découverte des applications distribuées avec Elixir
 

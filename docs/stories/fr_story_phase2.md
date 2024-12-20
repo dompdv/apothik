@@ -1,5 +1,5 @@
 ---
-title: Distributed applications with Elixir, a beginners' journey - Part 2
+title: A la découverte des applications distribuées avec Elixir - Partie 2
 ---
 
 # A la découverte des applications distribuées avec Elixir
