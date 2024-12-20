@@ -1,49 +1,48 @@
 ---
-title: A la découverte des applications distribuées avec Elixir - Partie 1
+title: Discovering Distributed Applications with Elixir - Part 1
 ---
 
-<a href="en_story_phase2.html"> Partie 2</a>
-<a href="en_story_phase3.html"> Partie 3</a>
+<a href="en_story_phase2.html"> Part 2</a>
+<a href="en_story_phase3.html"> Part 3</a>
 
-# Partie 1 : Un Cache distribué, sans redondance, sur 5 machines fixes
+# Part 1: A Distributed Cache, Without Redundancy, on 5 Fixed Machines
 
-## Pourquoi ?
+## Why?
 
-Elixir et Erlang sont des technologies très cool que nous aimons et pratiquons depuis longtemps (comme un hobby pour l'instant, hélas). Rien que les processus légers et le passage de messages sont la clé d'un nombre infini d'applications, même sur un seul serveur. Il suffit de penser à la magie derrière Liveview, les Channels, Presence et Pubsub par exemple.
+Elixir and Erlang are very cool technologies that we have loved and practiced for a long time (as a hobby for now, unfortunately). Just the lightweight processes and message passing are the key to an infinite number of applications, even on a single server. Just think of the magic behind Liveview, Channels, Presence, and Pubsub, for example.
 
-Mais la vraie promesse a toujours été l'espoir que des gens ordinaires comme nous puissent s'attaquer aux problèmes d'ingénierie très difficiles qui se posent dans le monde des applications *distribuées*.
+But the real promise has always been the hope that ordinary people like us could tackle the very difficult engineering problems that arise in the world of *distributed* applications.
 
-Inspirés par l'excellent exposé de [Johanna Larsonn à Code Beam Lite Mexico 2023](https://www.youtube.com/watch?v=7yU9mvwZKoY), nous avons décidé d'être la preuve vivante que son objectif a été atteint : inspirer certains d'entre nous, simples mortels, à oser s'attaquer à ce monde mystérieux.
+Inspired by the excellent talk by [Johanna Larsonn at Code Beam Lite Mexico 2023](https://www.youtube.com/watch?v=7yU9mvwZKoY), we decided to be the living proof that her goal was achieved: to inspire some of us, mere mortals, to dare to tackle this mysterious world.
 
-Mais commencer seul était intimidant.  Nous avons décidé de faire équipe (Olivier & Dominique, deux vieux amis et amateurs d'Elixir) en s'attaquant à ce défi à 4 mains. Et d'abord de réserver un créneau horaire hebdomadaire pour voyager ensemble.
+But starting alone was intimidating. We decided to team up (Olivier & Dominique, two old friends and Elixir enthusiasts) to tackle this challenge with four hands. And first, to reserve a weekly time slot to travel together.
 
-Cette série d'articles est le récit non censuré de nos tentatives. Ce n'est pas un cours sur la programmation décentralisée, c'est l'histoire de comment nous avons essayé, trébuché et parfois réussi sur ce chemin.
+This series of articles is the uncensored account of our attempts. It is not a course on decentralized programming, it is the story of how we tried, stumbled, and sometimes succeeded on this path.
 
-## Le plan d'ensemble
+## The Overall Plan
 
-Parce que le sujet est difficile, nous ne pouvions pas sauter directement sur nos claviers et coder une base de données distribuée, tolérante aux fautes et massivement extensible.  Nous avons dû concevoir un plan avec une courbe d'apprentissage que l'on espère douce. Grâce à nos premières lectures et un premier vernis, nous avons conçu un plan par phase qui ressemblait un peu à cela:
-- *Quelle application?* La question n'est pas de créer une application complexe, mais plutôt de lui donner les bonnes qualités dans un contexte distribué. Choisissons un simple cache clé-valeur.
-- *Phase 1 :* Un Cache distribué, sans redondance, sur 5 machines fixes.
-- *Phase 2 :* Même chose, mais avec un cluster dynamique (ajout et perte de machine). Explorer l'influence des fonctions de répartition des clés.
-- *Phase 3 :* Ajout de redondance de stockage (la clé est recopiée sur plusieurs machines) pour garantir la conservation des données malgré la perte de machine. Gérer un cluster dynamique et des pannes
+Because the subject is difficult, we couldn't just jump on our keyboards and code a fault-tolerant, massively scalable distributed database. We had to design a plan with a learning curve that we hope is smooth. Thanks to our initial readings and a first coat of paint, we designed a phased plan that looked something like this:
+- *What application?* The question is not to create a complex application, but rather to give it the right qualities in a distributed context. Let's choose a simple key-value cache.
+- *Phase 1:* A Distributed Cache, Without Redundancy, on 5 Fixed Machines.
+- *Phase 2:* Same thing, but with a dynamic cluster (adding and losing machines). Explore the influence of key distribution functions.
+- *Phase 3:* Adding storage redundancy (the key is copied to multiple machines) to ensure data retention despite machine loss. Manage a dynamic cluster and failures.
 
-Et bien sûr, cela implique de développer des petits outils annexes pour procéder aux expériences: charger le cache, observer l'état des machines, ajouter ou supprimer des machines, etc
+And of course, this involves developing small auxiliary tools to conduct experiments: load the cache, observe the state of the machines, add or remove machines, etc.
 
-## Préparons le terrain
+## Preparing the Ground
 
-### Les noeuds
-Mais avant de pouvoir écrire du Elixir, il faut bien être capable de le faire tourner sur plusieurs machines. En réalité, il n'est pas besoin d'avoir plusieurs machines pour débuter. En effet, la fondation d'Erlang est une machine virtuelle, la **BEAM**, qui exécute le **Erlang Runtime System**, [détails ici](https://www.erlang.org/blog/a-brief-beam-primer/). Il est possible de démarrer plusieurs machines Erlang, sur un seul ordinateur. Vous allez me dire que ça n'est pas représentatif d'un cluster de 5 machines séparée. En général oui, mais pas pour Erlang qui rend cela transparent. Un message va s'envoyer de la même façon entre deux processus qu'ils soient situés dans la même machine virtuelle, dans deux machines virtuelles différentes, ou même que les machines virtuelles soient situées sur deux machines physiques différentes. L'appel sera le même mais, bien sûr, les propriétés du système pourront être différentes, car il faudra compter avec la latence, les possibilités de panne de réseau entre machines physiques, etc.
+### The Nodes
+But before we can write Elixir, we need to be able to run it on multiple machines. In reality, you don't need multiple machines to start. Indeed, the foundation of Erlang is a virtual machine, the **BEAM**, which runs the **Erlang Runtime System**, [details here](https://www.erlang.org/blog/a-brief-beam-primer/). It is possible to start multiple Erlang machines on a single computer. You might say that this is not representative of a cluster of 5 separate machines. Generally yes, but not for Erlang, which makes this transparent. A message will be sent in the same way between two processes whether they are located in the same virtual machine, in two different virtual machines, or even if the virtual machines are located on two different physical machines. The call will be the same but, of course, the system properties may be different, as you will have to account for latency, the possibility of network failures between physical machines, etc.
 
-Des machines virtuelles Erlang qui communiquent s'appellent des noeuds (voir [introduction à Erlang distribué](https://www.erlang.org/docs/17/reference_manual/distributed)). En Elixir, un module spécifique permet de le manipuler, le [module `Node`](https://hexdocs.pm/elixir/1.12/Node.html).
+Erlang virtual machines that communicate are called nodes (see [introduction to distributed Erlang](https://www.erlang.org/docs/17/reference_manual/distributed)). In Elixir, a specific module allows you to manipulate it, the [Node module](https://hexdocs.pm/elixir/1.12/Node.html).
 
-Nous allons voir comment démarrer des noeuds qui communiquent entre eux.
+We will see how to start nodes that communicate with each other.
 
+### Starting 5 Machines
 
-### Lancer 5 machines
+Before the cluster, let's create our `apothik` application, with a little help from `mix`. `mix new apothik --sup`. Then `cd apothik && mix apothik` to check that everything is fine so far. We chose to create an application with supervision (`--sup`). To be honest, we initially did it without a supervisor, but we had to add one very quickly. In hindsight, an Elixir application without a supervisor is very rare.
 
-Avant le cluster, créons notre application `apothik`, avec un petit coup de `mix`. `mix new apothik --sup`. Puis `cd apothik && mix apothik` pour vérifier que tout va bien jusque là. Nous avons choisi de créer une application avec supervision (`--sup`). A dire vrai, nous l'avions fait sans superviseur au début, mais nous avons été obligé d'en rajouter un très vite. A la réflexion, une application Elixir sans superviseur est très rare.
-
-Maintenant, demandons à une IA de nous faire un script de lancement de 5 machines Erlang. Après avoir supprimé beaucoup de code inutile et adapté les commentaires, voilà le résultat, dans `/scripts/start_cluster.sh`:
+Now, let's ask an AI to create a script to start 5 Erlang machines. After removing a lot of unnecessary code and adapting the comments, here is the result, in `/scripts/start_cluster.sh`:
 
 ```bash
 #!/usr/bin/env bash
@@ -69,26 +68,24 @@ for i in $(seq 1 $NUM_INSTANCES); do
 done
 
 wait
-
 ```
 
-Tout se joue au lancement de `elixir` (faire un `man elixir`, c'est très instructif). Chaque noeud a un nom de la forme `nom@ip_address`, indiqué par `--name`. 
-On lance l'application en lançant le script `mix run --no-halt`.  
+Everything happens when launching `elixir` (doing a `man elixir` is very instructive). Each node has a name in the form `name@ip_address`, indicated by `--name`. 
+We launch the application by running the script `mix run --no-halt`.  
 
-`--no-halt`garde la machine virtuelle Elixir en route même si l'application se termine. Sans cela, et parce que notre application ne fait encore rien, la machine virtuelle s'arrêterait 
-tout de suite.
+`--no-halt` keeps the Elixir virtual machine running even if the application terminates. Without this, and because our application does nothing yet, the virtual machine would stop immediately.
 
-Le `&`indique de le lancer sur un processus (un processus de l'OS) fils du script bash.  Ainsi, la commande ne bloque pas le script, et les machines seront arrêtées quand le script s'arrête. 
-`wait` suspend le script. Cela permet d'arrêter par `ctrl-C` le script et en cascade toutes les machines virtuelles.
+The `&` indicates to launch it on a child process (an OS process) of the bash script. Thus, the command does not block the script, and the machines will be stopped when the script stops. 
+`wait` suspends the script. This allows stopping the script with `ctrl-C` and cascading all virtual machines.
 
-Nous avons dû ajouter `mix compile` en amont car le lancement en parallèle de plusieurs `mix run` pouvait lancer des compilations qui se marchaient sur les pieds.
+We had to add `mix compile` upstream because launching multiple `mix run` in parallel could start compilations that would step on each other's toes.
 
-Un petit `chmod u+x ./scripts/start_cluster.sh` pour donner des droits d'exécution au script bash, et vous pouvez lancer vos 5 machines `./scripts/start_cluster.sh` !
+A little `chmod u+x ./scripts/start_cluster.sh` to give execution rights to the bash script, and you can launch your 5 machines with `./scripts/start_cluster.sh`!
 
-### Créer un cluster
+### Creating a Cluster
 
-Pour l'instant, les 5 machines ne se connaissent pas, elles vivent leur vie indépendantes l'une de l'autre. Pour former un cluster, il faut qu'elles se reconnaissent entre elles.
-Après avoir lancé vos machines dans un terminal, ouvrez un autre terminal et lancez `iex`.
+For now, the 5 machines do not know each other, they live their independent lives. To form a cluster, they need to recognize each other.
+After launching your machines in one terminal, open another terminal and launch `iex`.
 
 ```
 % iex                        
@@ -96,12 +93,12 @@ iex(1)> Node.ping(:"apothik_1@127.0.0.1")
 :pang
 ```
 
-La fonction [`Node.ping`](https://hexdocs.pm/elixir/1.12/Node.html#ping/1) permet de connecter deux noeuds. 
-Elle répond `:pang` en cas d'échec, et `:pong` en cas de succès. Similaire à [`Node.connect`](https://hexdocs.pm/elixir/1.12/Node.html#connect/1) en plus drôle.
+The function [`Node.ping`](https://hexdocs.pm/elixir/1.12/Node.html#ping/1) allows connecting two nodes. 
+It responds `:pang` in case of failure, and `:pong` in case of success. Similar to [`Node.connect`](https://hexdocs.pm/elixir/1.12/Node.html#connect/1) but funnier.
 
-Note importante, le nom complet du noeud est un atome. Nous avons écrit `:"apothik_1@127.0.0.1"` et non `"apothik_1@127.0.0.1"`, en préfixant par `:`.
+Important note, the full name of the node is an atom. We wrote `:"apothik_1@127.0.0.1"` and not `"apothik_1@127.0.0.1"`, prefixing with `:`.
 
-Après tentatives et tests, nous avons compris qu'il faut donner un nom à notre session `iex`.
+After attempts and tests, we understood that we need to give a name to our `iex` session.
 
 ```
 iex --name master@127.0.0.1
@@ -109,11 +106,11 @@ iex --name master@127.0.0.1
 :pong
 ```
 
-**Ca marche** ! 
+**It works**! 
 
-On en profite pour mettre `iex --name master@127.0.0.1` dans `/scripts/start_master.sh`.
+We take the opportunity to put `iex --name master@127.0.0.1` in `/scripts/start_master.sh`.
 
-Continuons:
+Let's continue:
 
 ```terminal
 2> Node.list
@@ -126,28 +123,25 @@ Continuons:
 [:"master@127.0.0.1", :"apothik_1@127.0.0.1"]
 ```
 
-`Node.list` liste tous les noeuds du cluster, à l'exception de l'appelant. Au fur et à mesure que l'on connecte un noeud, le cluster s'agrandit. 
+`Node.list` lists all nodes in the cluster, except the caller. As we connect a node, the cluster grows. 
 
-Il est possible d'appeler à distance une fonction ("Remote procedure call") à l'aide du module Erlang [`rpc`](https://www.erlang.org/doc/apps/kernel/rpc.html). 
-Quand on appelle `Node.list`sur `apothik_2@127.0.0.1`, on constate que ce noeud a une vision complète de de tous les noeuds du cluster. Il suffit donc de se
-connecter à *un seul* noeud du cluster pour le rejoindre et que tous les autres noeuds soient automatiquement mis au courant! La magie d'Erlang!
+It is possible to call a function remotely ("Remote procedure call") using the Erlang module [`rpc`](https://www.erlang.org/doc/apps/kernel/rpc.html). 
+When we call `Node.list` on `apothik_2@127.0.0.1`, we see that this node has a complete view of all the nodes in the cluster. So, it is enough to connect to *one* node in the cluster to join it and have all other nodes automatically informed! The magic of Erlang!
 
-Mais, minute, il me semble qu'il y a une faille de sécurité: on pourrait se connecter à un noeud à partir de son nom, puis exécuter n'importe quel code dessus?
-Pas vraiment, quand on lance une machine virtuelle Erlang, elle est associée avec un `cookie`(une chaine de caractère secrète). Seules les machines
-lancées avec le même `cookie` peuvent se connecter entre elles. On peut specifier le cookie avec `--cookie`, mais si on ne le fait pas, le fichier
-`~/.erlang.cookie` est utilisé (et généré s'il n'existe pas). Comme on a lancé les machines du même utilisateur, elles avaient le même cookie.
+But wait, it seems there is a security flaw: could we connect to a node from its name and then execute any code on it?
+Not really, when you launch an Erlang virtual machine, it is associated with a `cookie` (a secret string). Only machines launched with the same `cookie` can connect to each other. You can specify the cookie with `--cookie`, but if you don't, the `~/.erlang.cookie` file is used (and generated if it doesn't exist). Since we launched the machines from the same user, they had the same cookie.
 
-**Attention**, le cookie n'est qu'un moyen de partitionner les clusters sur un même réseau physique (pour déployer un cluster de dév sur la même machine qu'un cluster de qualification, par exemple). Il ne protège pas des attaques malveillantes! Si le cluster est déployé sur un réseau public, il faudra adopter des mesures de sécurité supplémentaires : chiffrement inter-noeuds, authentification, etc.
+**Note**, the cookie is only a way to partition clusters on the same physical network (to deploy a dev cluster on the same machine as a qualification cluster, for example). It does not protect against malicious attacks! If the cluster is deployed on a public network, additional security measures will be needed: inter-node encryption, authentication, etc.
 
-### Découverte automatique des noeuds entre eux
+### Automatic Node Discovery
 
-Pour que le cluster se "monte" automatiquement, il faut que les noeuds se connectent entre eux au démarrage de l'application.
-Dans un cas aussi simple, c'est facile, car on a une liste connue de noeuds. Même s'il faut bien s'assurer de tenir compte des temps de démarrage des différents noeuds. 
+For the cluster to "assemble" automatically, the nodes need to connect to each other when the application starts.
+In such a simple case, it's easy because we have a known list of nodes. Even if we need to account for the startup times of the different nodes.
 
-Mais autant s'appuyer sur le travail des autres (tant que ça n'est pas de la magie noire pour nous) et faire appel à [`libcluster`](`https://github.com/bitwalker/libcluster`). 
-Cette librairie gère une série de politiques de découverte, des simples au plus avancées (via DNS, multicast ...).
+But we might as well rely on the work of others (as long as it's not black magic to us) and use [`libcluster`](`https://github.com/bitwalker/libcluster`). 
+This library manages a series of discovery policies, from simple to advanced (via DNS, multicast ...).
 
-Ajoutons là dans `mix.exs`
+Let's add it in `mix.exs`
 ```elixir
   defp deps do
     [
@@ -155,8 +149,8 @@ Ajoutons là dans `mix.exs`
     ]
 ```
 
-(ne pas oublier le `mix deps.get`)
-Elle se lance dans l'arbre de supervision, dans `/lib/apothik/application.ex`
+(don't forget `mix deps.get`)
+It starts in the supervision tree, in `/lib/apothik/application.ex`
 ```elixir
 defmodule Apothik.Application do
   @moduledoc false
@@ -184,18 +178,18 @@ defmodule Apothik.Application do
 end
 ```
 
-Nous utilisons la stratégie de découverte la plus simple, via une liste finie de noms de noeuds, passée en paramètre du superviseur de `libcluster`:
+We use the simplest discovery strategy, via a finite list of node names, passed as a parameter to the `libcluster` supervisor:
 ```elixir
 {Cluster.Supervisor, [topologies, [name: Apothik.ClusterSupervisor]]}
 ```
 
-Lancez `./scripts/start_cluster.sh` et vous verrez les noeuds se découvrir:
+Launch `./scripts/start_cluster.sh` and you will see the nodes discover each other:
 ```
 17:32:13.703 [info] [libcluster:apothik_cluster_1] connected to :"apothik_2@127.0.0.1"
 etc...
 ```
 
-Dans l'autre terminal, vérifiez que le cluster est monté:
+In the other terminal, check that the cluster is assembled:
 ```
 % ./scripts/start_master.sh
 1> Node.ping(:"apothik_1@127.0.0.1")
@@ -205,14 +199,14 @@ Dans l'autre terminal, vérifiez que le cluster est monté:
  :"apothik_3@127.0.0.1", :"apothik_4@127.0.0.1"]
 ```
 
-Ca y est, nous pouvons lancer une application sur 5 serveurs qui forment un cluster Elixir !
-Nous pouvons démarrer la Phase 1
+There you go, we can launch an application on 5 servers that form an Elixir cluster!
+We can start Phase 1
 
-## Phase 1 : Un Cache distribué, sans redondance, sur 5 machines fixes.
+## Phase 1: A Distributed Cache, Without Redundancy, on 5 Fixed Machines.
 
-### Ajoutons un système de cache
+### Adding a Cache System
 
-Cet exemple est tellement classique qu'il est dans le tutorial officiel d'Elixir.
+This example is so classic that it is in the official Elixir tutorial.
 
 ```elixir
 defmodule Apothik.Cache do
@@ -244,9 +238,9 @@ defmodule Apothik.Cache do
 end
 ```
 
-Notez la fonction `stats` qui pour l'instant renvoie la taille du cache.
+Note the `stats` function which for now returns the cache size.
 
-Et dans `application.ex`, on ajoute le système de cache dans la supervision:
+And in `application.ex`, we add the cache system in the supervision:
 ```elixir
 children = [
     {Cluster.Supervisor, [topologies, [name: Apothik.ClusterSupervisor]]},
@@ -254,20 +248,20 @@ children = [
 ]
 ```
 
-Attention cependant à ce code anodin, beaucoup de choses doivent être notées. 
-Quand on ajoute `Apothik.Cache` dans la supervision, la fonction `Apothik.Cache.start_link/1` est appelée, qui appelle `GenServer.start_link/3` dont la [documentation](https://hexdocs.pm/elixir/1.16.2/GenServer.html#start_link/3) vaut le détour. 
+However, be careful with this seemingly simple code, as there are many important details to note. 
 
-Le point crucial ici est l'emploi de l'option `:name` avec un nom unique, le nom du module. Ce nom est inscrit dans un dictionnaire **propre à la machine virtuelle**.
-Cela permet d'envoyer un message à ce processus `GenServer` sans connaître son identifiant de processus (`pid`). Voir la [documentation](https://hexdocs.pm/elixir/1.16.2/GenServer.html#module-name-registration) pour d'autres possibilités. 
+When adding `Apothik.Cache` to the supervision tree, the function `Apothik.Cache.start_link/1` is called, which in turn calls `GenServer.start_link/3`. The [documentation](https://hexdocs.pm/elixir/1.16.2/GenServer.html#start_link/3) is worth a read.
 
-C'est ce qui permet, dans le code suivant, que le message arrive au bon processus:
+The crucial point here is the use of the `:name` option with a unique name, the module name. This name is registered in a dictionary **local to the virtual machine**. This allows sending a message to this `GenServer` process without knowing its process identifier (`pid`). See the [documentation](https://hexdocs.pm/elixir/1.16.2/GenServer.html#module-name-registration) for other possibilities.
+
+This is what allows the following code to send the message to the correct process:
 ```elixir
 def get(k), do: GenServer.call(__MODULE__, {:get, k})
 ```
 
-Comme ce nom est unique à la machine virtuelle, il y aura donc 5 processus de gestion de cache, de même nom, un par machine.
+Since this name is unique to the virtual machine, there will be 5 cache management processes with the same name, one per machine.
 
-Maintenant, retour dans le terminal:
+Now, back to the terminal:
 
 ```
 % ./scripts/start_master.sh 
@@ -279,11 +273,11 @@ Maintenant, retour dans le terminal:
 1
 ```
 
-Pourquoi passer par le `:rpc`? Nous avons seulement fait `iex`. L'application n'est pas lancée, donc le module `Apothik.Cache` est inconnu de cette machine virtuelle. ùNous pourrions lancer l'application aussi en faisant un `iex -S mix run`, et utiliser directement des fonctions comme `Apothik.Cache.get/1`, mais on court le risque d'avoir notre `master` considéré comme faisant partie du cluster. D'ailleurs, essayez de le lancer pour voir les messages d'erreur de `libcluster`. 
+Why use `:rpc`? We only did `iex`. The application is not running, so the `Apothik.Cache` module is unknown to this virtual machine. We could also launch the application by doing `iex -S mix run`, and use functions like `Apothik.Cache.get/1` directly, but we risk having our `master` considered part of the cluster. In fact, try launching it to see the error messages from `libcluster`.
 
-Dernier point, pour nous simplifier la vie, nous avons créé un fichier `.iex.exs`. Ce script est lancé au démarrage de `iex` et permet de créer un contexte aux sessions de `iex` et notamment de charger des fonctions utilitaires.
+Lastly, to simplify our lives, we created a `.iex.exs` file. This script is run at the start of `iex` and allows creating a context for `iex` sessions, including loading utility functions.
 
-Ici, ajoutons des fonctions permettant de jouer avec nos caches.
+Here, we add functions to play with our caches.
 
 ```elixir
 defmodule Master do
@@ -305,7 +299,7 @@ defmodule Master do
 end
 ```
 
-Relancez le cluster. Vérifions que l'on peut mettre des choses en cache sur un noeud donné:
+Restart the cluster. Let's check that we can cache things on a given node:
 ```
 % ./scripts/start_master.sh
 1> Master.fill(1,1000)
@@ -314,23 +308,22 @@ Relancez le cluster. Vérifions que l'on peut mettre des choses en cache sur un 
 1000
 ```
 
-Voilà, maintenant nous avons 5 caches sur 5 machines. La prochaine étape est d'avoir **un seul** cache **distribué** sur 5 machines!
+There you go, now we have 5 caches on 5 machines. The next step is to have **one** cache **distributed** across 5 machines!
 
-### Le plan d'ensemble
+### The Overall Plan
 
-Pour que le cluster se comporte comme un seul cache, il faut que l'on répartisse le stockage le plus uniformément possible sur chacun des 5 noeuds. Un couple {clé, valeur} sera alors présent sur un seul des noeuds.
+For the cluster to behave as a single cache, we need to distribute the storage as evenly as possible across each of the 5 nodes. A {key, value} pair will then be present on only one of the nodes.
 
-De plus, nous souhaitons pouvoir interroger n'importe quel noeud du cluster pour obtenir une valeur. Nous ne voulons pas qu'un noeud spécialisé joue le rôle de point d'entrée particulier.
+Additionally, we want to be able to query any node in the cluster to obtain a value. We do not want a specialized node to act as a particular entry point.
 
-Nous devons donc résoudre deux questions:  comment envoyer un message à un processus situé sur un autre noeud et comment savoir que telle clé est sur tel serveur.
+We need to solve two questions: how to send a message to a process located on another node and how to know that a particular key is on a particular server.
 
-### Envoyer un message à un autre noeud
+### Sending a Message to Another Node
 
-Il a fallu fouiller un peu. Une première idée est d'aller voir la documentation de [`Process`](https://hexdocs.pm/elixir/Process.html). 
-Cela semble prometteur, la fonction fondamentale [`Process.send/3`](https://hexdocs.pm/elixir/Process.html#send/3) permet d'envoyer un message à partir 
-de la connaissance du nom du process (local à la machine virtuelle) et du nom du noeud:  `Process.send({name_of_the_process, node_name}, msg, options)`.
+We had to dig a bit. A first idea is to look at the documentation of [`Process`](https://hexdocs.pm/elixir/Process.html). 
+It seems promising, the fundamental function [`Process.send/3`](https://hexdocs.pm/elixir/Process.html#send/3) allows sending a message based on the knowledge of the process name (local to the virtual machine) and the node name: `Process.send({name_of_the_process, node_name}, msg, options)`.
 
-Avant de faire un test d'envoi de message au cache, rajoutons quelques lignes dans `cache/cache.ex`
+Before testing sending a message to the cache, let's add a few lines in `cache/cache.ex`
 ```elixir
   @impl true
   def handle_info(msg, state) do
@@ -338,16 +331,16 @@ Avant de faire un test d'envoi de message au cache, rajoutons quelques lignes da
     {:noreply, state}
   end
 ```
-En effet, si l'on envoie un message quelconque à un `GenServer` (un message qui ne soit pas un `call` ou un `cast` par exemple), le callback `handle_info` est appelé.
+Indeed, if we send an arbitrary message to a `GenServer` (a message that is not a `call` or a `cast` for example), the callback `handle_info` is called.
 
-Essayons:
+Let's try:
 ``` 
 % ./scripts/start_master.sh
 1> Process.send({Apothik.Cache, :"apothik_1@127.0.0.1"}, "hey there", [])
 :ok
 ```
 
-Et `"hey there"` apparaît dans le terminal du cluster. Allez, on tente avec `GenServer.call`:
+And `"hey there"` appears in the cluster terminal. Let's try with `GenServer.call`:
 
 ```
 2>GenServer.call({Apothik.Cache, :"apothik_1@127.0.0.1"}, {:put, 1, "something"})
@@ -358,27 +351,27 @@ Et `"hey there"` apparaît dans le terminal du cluster. Allez, on tente avec `Ge
 "something"
 ```
 
-Visiblement, c'est le même fonctionnement avec `GenServer.call/3`! Ca y est, nous avons la première pièce manquante.
+Apparently, it works the same way with `GenServer.call/3`! We have the first missing piece.
 
-### Envoyer le message sur le bon noeud, à partir de n'importe quel noeud
+### Sending the Message to the Right Node, from Any Node
 
-Dans `cache/cache.ex`, on transforme les appels d'interface en, par exemple: 
+In `cache/cache.ex`, we transform the interface calls into, for example: 
 ```elixir
 def get(k) do
   node = key_to_node(k)
   GenServer.call({__MODULE__, node}, {:get, k})
 end
 ```
-Supposons que `key_to_node` indique sur quel noeud est stocké la clé.
-Si j'appelle la fonction `Apothik.Cache.get("a_key")` (par exemple en faisant `:rpc.call(:"apothik_1@127.0.0.1", Apothik.Cache, :get, ["a_key"]))`), et que `key_to_node("a_key)` renvoie `:"apothik_1@127.0.0.1"`, alors un message partira de `apothik_1` vers `apothik_2` puis reviendra en réponse de `apothik_2` vers `apothik_1` avec la réponse. On voit donc que tous les noeuds du cluster jouent le même rôle et peuvent répondre à toutes les requêtes.
+Let's assume that `key_to_node` indicates which node the key is stored on.
+If I call the function `Apothik.Cache.get("a_key")` (for example by doing `:rpc.call(:"apothik_1@127.0.0.1", Apothik.Cache, :get, ["a_key"]))`, and `key_to_node("a_key)` returns `:"apothik_1@127.0.0.1"`, then a message will be sent from `apothik_1` to `apothik_2` and then return from `apothik_2` to `apothik_1` with the response. Thus, all nodes in the cluster play the same role and can respond to all requests.
 
-### La fonction de hashing
+### The Hashing Function
 
-La clé (jeu de mot!) de la solution est d'utiliser une méthode de hashing.  Une méthode de hashing est une fonction mathématique déterministe qui prend une chaine binaire (donc un nombre arbitrairement grand) et qui renvoie un nombre entier dans un intervalle fixe (qui peut être petit ou grand, selon les applications). Ces fonctions possèdent aussi des propriétés bien choisies. Par exemple, la propriété que deux nombres très voisins en entrée vont donner des résultats très différents en sortie. Et que l'intervalle de sortie est bien "balayé": mathématiquement, tous les éléments de l'ensemble d'arrivée ont des nombres d'antécédents comparables.
+The key (pun intended!) to the solution is to use a hashing method. A hashing method is a deterministic mathematical function that takes a binary string (thus an arbitrarily large number) and returns an integer within a fixed interval (which can be small or large, depending on the applications). These functions also have well-chosen properties. For example, the property that two very close numbers in input will give very different results in output. And that the output interval is well "swept": mathematically, all elements of the arrival set have comparable numbers of antecedents.
 
-Erlang propose une méthode de hashing bien commode [`:erlang.phash2/2`](https://www.erlang.org/doc/apps/erts/erlang.html#phash2/2). Elle existe avec 1 ou 2 arguments. Avec deux arguments, les valeurs de sorties sont dans l'intervalle 0..argument.
+Erlang offers a very convenient hashing method [`:erlang.phash2/2`](https://www.erlang.org/doc/apps/erts/erlang.html#phash2/2). It exists with 1 or 2 arguments. With two arguments, the output values are in the interval 0..argument.
 
-Essayons:
+Let's try:
 ```
 % iex
 iex(1)> :erlang.phash2(1)
@@ -395,11 +388,11 @@ iex(6)> (for i<-1..100_000, do: :erlang.phash2(i, 5)) |> Enum.frequencies
 %{0 => 20002, 1 => 20054, 2 => 20130, 3 => 19943, 4 => 19871}
 ```
 
-On voit que les valeurs de sortie sont bien réparties de 0 à 4.
+We see that the output values are well distributed from 0 to 4.
 
-### Répartir les clés sur les serveurs
+### Distributing Keys Across Servers
 
-D'abord, faisons un peu le ménage. On rassemble la connaissance du cluster dans un module spécialisé: `apothik/cluster.ex`
+First, let's clean up a bit. We gather the cluster knowledge in a specialized module: `apothik/cluster.ex`
 ```elixir
 defmodule Apothik.Cluster do
   @nb_nodes 5
@@ -414,13 +407,13 @@ defmodule Apothik.Cluster do
 end
 ```
 
-Cela change l'appel dans `apothik/application.ex`
+This changes the call in `apothik/application.ex`
 ```elixir
 -    hosts = for i <- 1..5, do: :"apothik_#{i}@127.0.0.1"
 +    hosts = Apothik.Cluster.node_list()
 ```
 
-Tout est prêt pour implémenter `key_to_node/1` dans `cache/cache.ex`
+Everything is ready to implement `key_to_node/1` in `cache/cache.ex`
 ```elixir
 defmodule Apothik.Cache do
   use GenServer
@@ -456,10 +449,10 @@ defmodule Apothik.Cache do
 end
 ```
 
-La fonction est très simple: la clé donne un numéro de noeud entre 0 et 4, et on trouve le nom du cluster à partir de là.
-On n'est pas très fier de la fonction `def node_name(i), do: :"apothik_#{i}@127.0.0.1"` qui pourrait allouer trop d'atomes (peut-être, pas sûr, il faudrait creuser mais ça n'est pas l'objet de cette phase).
+The function is very simple: the key gives a node number between 0 and 4, and we find the cluster name from there.
+We are not very proud of the function `def node_name(i), do: :"apothik_#{i}@127.0.0.1"` which could allocate too many atoms (maybe, not sure, it would need further investigation but that's not the point of this phase).
 
-Maintenant, remplissons le cache pour voir ce qui se passe:
+Now, let's fill the cache to see what happens:
 ```
 % ./scripts/start_master.sh
 1> Master.fill(1, 5000)
@@ -470,9 +463,9 @@ Maintenant, remplissons le cache pour voir ce qui se passe:
 5000
 ```
 
-On a envoyé 5000 valeurs dans le cache distribué via le noeud 1. On constate que les valeurs ont bien été distribuées assez uniformément sur les 5 noeuds. 
+We sent 5000 values into the distributed cache via node 1. We see that the values have been distributed quite evenly across the 5 nodes. 
 
-Nous avons un cache distribué sur 5 machines ! Phase 1 accomplie !
+We have a cache distributed across 5 machines! Phase 1 accomplished!
 
-<a href="en_story_phase2.html"> Partie 2</a>
-<a href="en_story_phase3.html"> Partie 3</a>
+<a href="en_story_phase2.html"> Part 2</a>
+<a href="en_story_phase3.html"> Part 3</a>
