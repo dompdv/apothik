@@ -2,8 +2,8 @@
 title: A la découverte des applications distribuées avec Elixir - Partie 1
 ---
 
-<a href="fr_story_phase2.html"> Partie 2</a>
-<a href="fr_story_phase3.html"> Partie 3</a>
+<a href="en_story_phase2.html"> Partie 2</a>
+<a href="en_story_phase3.html"> Partie 3</a>
 
 # Partie 1 : Un Cache distribué, sans redondance, sur 5 machines fixes
 
@@ -474,5 +474,5 @@ On a envoyé 5000 valeurs dans le cache distribué via le noeud 1. On constate q
 
 Nous avons un cache distribué sur 5 machines ! Phase 1 accomplie !
 
-<a href="fr_story_phase2.html"> Partie 2</a>
-<a href="fr_story_phase3.html"> Partie 3</a>
+<a href="en_story_phase2.html"> Partie 2</a>
+<a href="en_story_phase3.html"> Partie 3</a>
