@@ -26,7 +26,7 @@ Parce que le sujet est difficile, nous ne pouvions pas sauter directement sur no
 - *Quelle application?* La question n'est pas de créer une application complexe, mais plutôt de lui donner les bonnes qualités dans un contexte distribué. Choisissons un simple cache clé-valeur.
 - *Phase 1 :* Un Cache distribué, sans redondance, sur 5 machines fixes.
 - *Phase 2 :* Même chose, mais avec un cluster dynamique (ajout et perte de machine). Explorer l'influence des fonctions de répartition des clés.
-- *Phase 3 :* Ajout de redondance de stockage (la clé est recopiée sur plusieurs machines) pour garantir la conservation des données malgré la perte de machine. Gérer un cluster dynamique et des pannes
+- *Phase 3 :* Ajout de redondance de stockage (la clé est recopiée sur plusieurs machines) pour garantir la conservation des données malgré la perte de machine
 
 Et bien sûr, cela implique de développer des petits outils annexes pour procéder aux expériences: charger le cache, observer l'état des machines, ajouter ou supprimer des machines, etc
 
