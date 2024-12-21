@@ -22,11 +22,11 @@ This series of articles is the uncensored account of our attempts. It is not a c
 
 ## The Overall Plan
 
-Because the subject is difficult, we couldn't just jump on our keyboards and code a fault-tolerant, massively scalable distributed database. We had to design a plan with a learning curve that we hope is smooth. Thanks to our initial readings and a first coat of paint, we designed a phased plan that looked something like this:
+Because the subject is difficult, we couldn't just jump on our keyboards and code a fault-tolerant, massively scalable distributed database. We had to design a plan with a learning curve that we hope is smooth. Thanks to our initial readings, we designed a phased plan that looked something like this:
 - *What application?* The question is not to create a complex application, but rather to give it the right qualities in a distributed context. Let's choose a simple key-value cache.
-- *Phase 1:* A Distributed Cache, Without Redundancy, on 5 Fixed Machines.
+- *Phase 1:* A distributed cache, without redundancy, on 5 fixed machines.
 - *Phase 2:* Same thing, but with a dynamic cluster (adding and losing machines). Explore the influence of key distribution functions.
-- *Phase 3:* Adding storage redundancy (the key is copied to multiple machines) to ensure data retention despite machine loss. Manage a dynamic cluster and failures.
+- *Phase 3:* Adding storage redundancy (the key is copied to multiple machines) to ensure data retention despite machine loss
 
 And of course, this involves developing small auxiliary tools to conduct experiments: load the cache, observe the state of the machines, add or remove machines, etc.
 
