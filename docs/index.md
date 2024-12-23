@@ -11,7 +11,7 @@ Les articles sont en français ou en anglais (écrit d'abord en français et tra
 </p>
 
 <p>
-This series of 3 articles is about <b>distributed applications</b>> It is written by beginners in the field, and is aimed at <b>beginners</b>.
+This series of 3 articles is about <b>distributed applications</b>. It is written by beginners in the field, and is aimed at <b>beginners</b>.
 It is the uncensored account of our attempt to start scratching the surface. It is not a course on decentralized programming. The articles tell the story of our journey of discovery into the complex world of distributed applications.
 
 The articles are in French or English (first written in French and automatically translated into English).
